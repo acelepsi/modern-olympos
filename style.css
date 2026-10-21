@@ -1,0 +1,788 @@
+/* =================================================================
+   MODERN OLYMPOS — Mythological Court
+   Design tokens (unchanged from v1)
+   ================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Cormorant+SC:wght@600&family=Source+Sans+3:wght@400;500;600&display=swap');
+
+:root {
+  --bg-void:        #1b1a18;
+  --bg-void-raised: #221f1c;
+  --parchment:       #f3ede0;
+  --parchment-dim:   #e8dfc9;
+  --ink:             #2a2620;
+  --ink-soft:        #6b6355;
+  --line-on-dark:    rgba(243, 237, 224, 0.14);
+  --line-on-light:   rgba(42, 38, 32, 0.16);
+
+  --prosecution:      #7a1f2b;
+  --prosecution-dim:  #4c141c;
+  --prosecution-glow: rgba(122, 31, 43, 0.35);
+
+  --defense:      #202a5c;
+  --defense-dim:  #151c3d;
+  --defense-glow: rgba(32, 42, 92, 0.35);
+
+  --verdict:        #b08d45;
+  --verdict-bright: #d9b871;
+  --verdict-dim:    #6e5626;
+  --verdict-glow:   rgba(176, 141, 69, 0.35);
+
+  --radius: 3px;
+  --shadow-deep: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+
+body {
+  background: var(--bg-void);
+  color: var(--parchment);
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+h1, h2, h3, .display {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.nameplate {
+  font-family: 'Cormorant SC', serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-size: 0.85rem;
+}
+
+a { color: inherit; }
+
+.marble-bg {
+  background-color: var(--bg-void);
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(255,255,255,0.025), transparent 40%),
+    radial-gradient(circle at 85% 70%, rgba(255,255,255,0.02), transparent 45%);
+}
+
+/* ===================================================================
+   SITE HEADER — persistent across the whole public page
+   =================================================================== */
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 28px;
+  background: var(--bg-void-raised);
+  border-bottom: 1px solid var(--line-on-dark);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* -- primary nav: takes the remaining space between brand and auth,
+      and centers its links within that space ------------------------ */
+.primary-nav {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 32px;
+  min-width: 0;
+}
+
+.primary-nav a {
+  font-family: 'Cormorant SC', serif;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  font-size: 0.82rem;
+  color: var(--parchment-dim);
+  text-decoration: none;
+  padding: 6px 2px;
+  border-bottom: 1px solid transparent;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.primary-nav a:hover {
+  color: var(--verdict-bright);
+}
+
+.primary-nav a[aria-current="page"] {
+  color: var(--verdict-bright);
+  border-bottom-color: var(--verdict);
+}
+
+.auth-area {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .site-header { flex-wrap: wrap; row-gap: 10px; }
+  .primary-nav { order: 3; flex-basis: 100%; justify-content: center; gap: 22px; }
+}
+
+.brand .seal-mini {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--verdict);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--verdict-bright);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+
+.brand .wordmark {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* -- logged-out state: small elegant Login button ------------------ */
+.login-btn {
+  background: transparent;
+  border: 1px solid var(--verdict);
+  color: var(--verdict-bright);
+  padding: 8px 20px;
+  border-radius: 999px;
+  font-family: 'Cormorant SC', serif;
+  letter-spacing: 0.08em;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.login-btn:hover {
+  background: var(--verdict);
+  color: var(--bg-void);
+}
+
+/* -- logged-in state: identity chip + logout ------------------------ */
+.session-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-chip .who {
+  font-size: 0.85rem;
+  color: var(--parchment-dim);
+}
+
+.session-chip .who .role-tag {
+  font-family: 'Cormorant SC', serif;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-soft);
+  color: var(--ink-soft);
+  margin-left: 8px;
+}
+
+.role-tag[data-role="prosecutor"] { border-color: var(--prosecution); color: #e6a3ac; }
+.role-tag[data-role="lawyer"]     { border-color: var(--defense); color: #a9b4e8; }
+.role-tag[data-role="jury"]       { border-color: var(--verdict); color: var(--verdict-bright); }
+.role-tag[data-role="admin"]      { border-color: var(--parchment-dim); color: var(--parchment); }
+
+.logout-btn {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.logout-btn:hover { color: var(--parchment); }
+
+/* ===================================================================
+   LOGIN MODAL
+   =================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 9, 8, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.modal-overlay[hidden] { display: none; }
+
+.login-modal {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-void-raised);
+  border: 1px solid var(--line-on-dark);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-deep);
+  padding: 32px 30px 28px;
+  position: relative;
+  text-align: center;
+}
+
+.login-modal .modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.login-modal .modal-close:hover { color: var(--parchment); }
+
+.login-modal h2 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.login-modal .subhead {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  margin-bottom: 22px;
+}
+
+.code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.code-input {
+  background: var(--bg-void);
+  border: 1px solid var(--line-on-dark);
+  border-radius: var(--radius);
+  color: var(--parchment);
+  padding: 13px 14px;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  font-family: 'Source Sans 3', sans-serif;
+}
+
+.code-input:focus {
+  outline: none;
+  border-color: var(--verdict);
+  box-shadow: 0 0 0 3px var(--verdict-glow);
+}
+
+.enter-btn {
+  background: var(--verdict);
+  color: var(--bg-void);
+  border: none;
+  border-radius: var(--radius);
+  padding: 13px 16px;
+  font-family: 'Cormorant SC', serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.enter-btn:hover { background: var(--verdict-bright); }
+.enter-btn:disabled { opacity: 0.5; cursor: wait; }
+
+.login-status {
+  min-height: 18px;
+  font-size: 0.85rem;
+  color: var(--prosecution);
+}
+
+.login-status[data-state="pending"] { color: var(--ink-soft); }
+.login-status[data-state="ok"] { color: var(--verdict-bright); }
+
+/* ===================================================================
+   TRIAL ROOM
+   =================================================================== */
+.trial-room { display: flex; flex-direction: column; }
+
+.dossier {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 22px 32px;
+  background: var(--bg-void-raised);
+  border-bottom: 1px solid var(--line-on-dark);
+}
+
+.dossier .mugshot {
+  width: 76px;
+  height: 76px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  border: 1px solid var(--line-on-dark);
+  background: var(--bg-void);
+  flex-shrink: 0;
+}
+
+.dossier .defendant-info { flex: 1; min-width: 0; }
+
+.dossier .defendant-info .charge-label {
+  font-family: 'Cormorant SC', serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+.dossier .defendant-info h1 {
+  font-size: 1.9rem;
+  color: var(--parchment);
+  margin: 2px 0 4px;
+}
+
+.dossier .defendant-info .charge {
+  color: var(--parchment-dim);
+  font-size: 0.95rem;
+}
+
+.status-pill {
+  font-family: 'Cormorant SC', serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--verdict);
+  color: var(--verdict-bright);
+  white-space: nowrap;
+}
+
+.status-pill[data-status="trial"]   { border-color: var(--prosecution); color: #e6a3ac; }
+.status-pill[data-status="verdict"] { border-color: var(--verdict); color: var(--verdict-bright); }
+.status-pill[data-status="closed"]  { border-color: var(--ink-soft); color: var(--ink-soft); }
+
+.trial-floor {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 28px 1fr;
+  min-height: 0;
+}
+
+.divider {
+  background: repeating-linear-gradient(90deg, rgba(243,237,224,0.05) 0 2px, transparent 2px 8px);
+  border-left: 1px solid var(--line-on-dark);
+  border-right: 1px solid var(--line-on-dark);
+}
+
+.column { display: flex; flex-direction: column; min-height: 0; }
+
+.column-header {
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--line-on-dark);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.column-header h2 { font-size: 1.15rem; }
+
+.column--prosecution .column-header { background: linear-gradient(180deg, var(--prosecution-dim), transparent); }
+.column--prosecution .column-header h2 { color: #e6a3ac; }
+.column--defense .column-header { background: linear-gradient(180deg, var(--defense-dim), transparent); }
+.column--defense .column-header h2 { color: #a9b4e8; }
+
+.argument-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.argument-card {
+  background: var(--bg-void-raised);
+  border: 1px solid var(--line-on-dark);
+  border-left: 3px solid var(--ink-soft);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+}
+
+.column--prosecution .argument-card { border-left-color: var(--prosecution); }
+.column--defense .argument-card { border-left-color: var(--defense); }
+
+.argument-card .meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.argument-card .author { color: var(--parchment-dim); font-weight: 600; }
+.argument-card .text { color: var(--parchment); font-size: 0.96rem; white-space: pre-wrap; }
+
+.argument-card .evidence-links {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.argument-card .evidence-links a {
+  font-size: 0.85rem;
+  color: var(--verdict-bright);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--verdict-dim);
+  width: fit-content;
+}
+
+.argument-card .evidence-links img {
+  max-width: 100%;
+  border-radius: var(--radius);
+  margin-top: 6px;
+  border: 1px solid var(--line-on-dark);
+}
+
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  max-width: 240px;
+}
+
+/* --- Composer: only shown to the matching signed-in role ----------- */
+.composer {
+  border-top: 1px solid var(--line-on-dark);
+  padding: 16px 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer textarea,
+.composer input[type="url"] {
+  background: var(--bg-void);
+  border: 1px solid var(--line-on-dark);
+  border-radius: var(--radius);
+  color: var(--parchment);
+  padding: 10px 12px;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.92rem;
+  resize: vertical;
+}
+
+.composer textarea { min-height: 72px; }
+.composer .submit-row { display: flex; justify-content: flex-end; }
+.column--prosecution .composer button { background: var(--prosecution); }
+.column--defense .composer button { background: var(--defense); }
+
+.composer button {
+  border: none;
+  color: var(--parchment);
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  font-family: 'Cormorant SC', serif;
+  letter-spacing: 0.06em;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+/* --- Notices shown in place of the composer ------------------------- */
+.locked-notice {
+  padding: 16px 28px;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--line-on-dark);
+  text-align: center;
+}
+
+/* ===================================================================
+   DELIBERATION (jury voting / public results)
+   =================================================================== */
+.deliberation {
+  border-top: 1px solid var(--line-on-dark);
+  padding: 24px 32px 32px;
+  background: var(--bg-void-raised);
+}
+
+.deliberation h2 {
+  font-size: 1.25rem;
+  color: var(--verdict-bright);
+  margin-bottom: 4px;
+}
+
+.deliberation .subhead {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  margin-bottom: 18px;
+}
+
+.vote-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.vote-choice-row {
+  display: flex;
+  gap: 12px;
+}
+
+.vote-choice-row button {
+  flex: 1;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-on-dark);
+  background: var(--bg-void);
+  color: var(--parchment);
+  font-family: 'Cormorant SC', serif;
+  letter-spacing: 0.06em;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.vote-choice-row button[data-choice="prosecution"]:hover,
+.vote-choice-row button[data-choice="prosecution"].selected {
+  border-color: var(--prosecution);
+  background: var(--prosecution-dim);
+}
+
+.vote-choice-row button[data-choice="defense"]:hover,
+.vote-choice-row button[data-choice="defense"].selected {
+  border-color: var(--defense);
+  background: var(--defense-dim);
+}
+
+.vote-form textarea {
+  background: var(--bg-void);
+  border: 1px solid var(--line-on-dark);
+  border-radius: var(--radius);
+  color: var(--parchment);
+  padding: 10px 12px;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 0.92rem;
+  min-height: 70px;
+  resize: vertical;
+}
+
+.vote-form .submit-row { display: flex; justify-content: flex-end; }
+
+.vote-form button[type="submit"] {
+  background: var(--verdict);
+  color: var(--bg-void);
+  border: none;
+  padding: 11px 22px;
+  border-radius: var(--radius);
+  font-family: 'Cormorant SC', serif;
+  letter-spacing: 0.06em;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.results-tally {
+  display: flex;
+  gap: 24px;
+  max-width: 560px;
+}
+
+.results-tally .tally-block {
+  flex: 1;
+  text-align: center;
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-on-dark);
+}
+
+.results-tally .tally-block .count {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 2.2rem;
+  display: block;
+}
+
+.results-tally .tally-block.prosecution .count { color: #e6a3ac; }
+.results-tally .tally-block.defense .count { color: #a9b4e8; }
+
+/* ===================================================================
+   PLACEHOLDER PAGES (archive.html, who-is-who.html)
+   =================================================================== */
+.placeholder-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 80px 28px;
+  text-align: center;
+}
+
+.placeholder-page h1 {
+  font-size: 2.2rem;
+  color: var(--parchment);
+  margin-bottom: 16px;
+}
+
+.placeholder-page p {
+  color: var(--parchment-dim);
+  font-size: 1rem;
+}
+
+.placeholder-page .placeholder-note {
+  margin-top: 24px;
+  font-family: 'Cormorant SC', serif;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--verdict);
+}
+
+/* ===================================================================
+   LANDING PAGE (index.html) — full-screen slideshow hero
+   =================================================================== */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-void); /* shows briefly before the first image paints */
+}
+
+.hero-slideshow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.hero-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 2.2s ease;
+}
+
+.hero-slide.is-active {
+  opacity: 1;
+}
+
+/* Dark, slightly deeper at the edges so the centered text stays
+   readable against any placeholder image. */
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse at center, rgba(17,16,14,0.55), rgba(17,16,14,0.82) 75%),
+    rgba(17, 16, 14, 0.35);
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 720px;
+  text-align: center;
+  padding: 40px 28px;
+  color: var(--parchment);
+}
+
+.hero-content .hero-seal {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 22px;
+  font-size: 1.9rem;
+}
+
+.hero-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
+  font-size: clamp(2.6rem, 6vw, 4.6rem);
+  letter-spacing: 0.01em;
+  color: var(--parchment);
+  line-height: 1.05;
+}
+
+.hero-tagline {
+  font-family: 'Cormorant SC', serif;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  font-size: 0.95rem;
+  color: var(--verdict-bright);
+  margin-top: 12px;
+}
+
+.hero-description {
+  margin: 28px auto 38px;
+  max-width: 600px;
+  font-size: 1.05rem;
+  line-height: 1.75;
+  color: var(--parchment-dim);
+}
+
+.cta-btn {
+  display: inline-block;
+  background: var(--verdict);
+  color: var(--bg-void);
+  padding: 16px 42px;
+  border-radius: 999px;
+  font-family: 'Cormorant SC', serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-size: 1rem;
+  text-decoration: none;
+  box-shadow: 0 12px 30px rgba(176, 141, 69, 0.25);
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cta-btn:hover {
+  background: var(--verdict-bright);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px rgba(176, 141, 69, 0.35);
+}
+
+@media (max-width: 520px) {
+  .hero-description { font-size: 0.96rem; }
+  .cta-btn { padding: 14px 32px; }
+}
+
+/* --- Accessibility & responsive ------------------------------------- */
+@media (max-width: 860px) {
+  .trial-floor { grid-template-columns: 1fr; }
+  .divider { display: none; }
+  .dossier { flex-wrap: wrap; }
+  .vote-choice-row { flex-direction: column; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--verdict-bright);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* v5 moderation */
+.my-submissions{margin:2rem auto;padding:1.5rem;max-width:950px;background:var(--parchment);color:var(--ink);border-radius:10px}.my-submission{border-top:1px solid var(--line-on-light);padding:1rem 0;overflow-wrap:anywhere}.my-submission button{padding:.4rem .8rem;cursor:pointer}.submission-hint,.submission-feedback{font-size:.85rem;line-height:1.5}.submission-feedback{min-height:1.4rem}.argument-card{overflow-wrap:anywhere}
+
+/* v5 layout repair: preserve native hidden state even with flex/grid styles */
+[hidden] { display: none !important; }
+.mugshot-placeholder { display: flex; align-items: center; justify-content: center; font-family: 'Cormorant SC', serif; font-size: 2.5rem; color: var(--verdict-bright); background: linear-gradient(145deg,#302920,#171512); }
+.composer .submit-row { flex-wrap: wrap; gap: 10px; }
+.composer button { min-height: 42px; line-height: 1.3; }
+.composer button[data-action="draft"] { background: transparent; border: 1px solid var(--line-on-dark); color: var(--parchment); }
+.composer button:focus-visible { outline: 2px solid var(--verdict-bright); outline-offset: 3px; }
+.empty-feed { padding: 12px 20px; color: var(--parchment-dim); opacity: .8; }

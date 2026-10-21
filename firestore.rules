@@ -1,0 +1,103 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  // Replace this with the Firebase Authentication UID of your ONE administrator.
+  // Never use a student UID. Keep the quotes.
+  function admin() { return request.auth != null && request.auth.uid == 'REPLACE_WITH_ADMIN_UID'; }
+  function own(uid) { return request.auth != null && request.auth.uid == uid; }
+  match /students/{uid} {
+   allow get: if own(uid) || admin();
+   allow list: if admin();
+   // Only Firebase Console/Admin SDK provisions or edits student profiles.
+   allow write: if false;
+  }
+  match /settings/currentTrial {
+   allow get: if true;
+   allow list: if false;
+   allow create, update: if admin()
+     && request.resource.data.keys().hasOnly(['trialId'])
+     && request.resource.data.trialId is string
+     && request.resource.data.trialId.matches('^[a-z0-9-]{1,80}$')
+     && exists(/databases/$(database)/documents/trials/$(request.resource.data.trialId));
+   allow delete: if false;
+  }
+  match /trials/{trialId} {
+   allow read: if true;
+   allow create: if admin() && request.resource.data.keys().hasOnly(['title','status']) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed'];
+   allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','status','verdictSummary']) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed']
+     && (!('verdictSummary' in resource.data) || request.resource.data.status == 'closed')
+     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['verdictSummary']) ||
+       (resource.data.status == 'closed' && request.resource.data.status == 'closed' &&
+        !('verdictSummary' in resource.data) &&
+        request.resource.data.verdictSummary.keys().hasOnly(['guilty','notGuilty']) &&
+        request.resource.data.verdictSummary.guilty is int && request.resource.data.verdictSummary.guilty >= 0 &&
+        request.resource.data.verdictSummary.notGuilty is int && request.resource.data.verdictSummary.notGuilty >= 0));
+   allow delete: if false;
+   match /votes/{uid} {
+    function eligible() { return request.auth != null && request.auth.uid == uid
+      && exists(/databases/$(database)/documents/students/$(uid))
+      && get(/databases/$(database)/documents/students/$(uid)).data.active == true
+      && get(/databases/$(database)/documents/students/$(uid)).data.accountType == 'student'
+      && exists(/databases/$(database)/documents/trials/$(trialId)/assignments/$(uid))
+      && get(/databases/$(database)/documents/trials/$(trialId)/assignments/$(uid)).data.role == 'juror'
+      && get(/databases/$(database)/documents/trials/$(trialId)).data.status == 'verdict'; }
+    allow get: if admin() || (request.auth != null && request.auth.uid == uid);
+    allow list: if admin();
+    allow create: if eligible()
+      && request.resource.data.keys().hasOnly(['choice','reason','castAt'])
+      && request.resource.data.choice in ['guilty','not-guilty']
+      && request.resource.data.reason is string
+      && request.resource.data.reason.size() >= 15
+      && request.resource.data.reason.size() <= 2000
+      && request.resource.data.castAt == request.time;
+    allow update, delete: if false;
+   }
+   match /submissions/{submissionId} {
+    function signedStudent() { return request.auth != null &&
+      exists(/databases/$(database)/documents/students/$(request.auth.uid)) &&
+      get(/databases/$(database)/documents/students/$(request.auth.uid)).data.active == true &&
+      get(/databases/$(database)/documents/students/$(request.auth.uid)).data.accountType == 'student'; }
+    function assignedRole() { return get(/databases/$(database)/documents/trials/$(trialId)/assignments/$(request.auth.uid)).data.role; }
+    function canSubmit() { return signedStudent() &&
+      get(/databases/$(database)/documents/trials/$(trialId)).data.status == 'trial' &&
+      exists(/databases/$(database)/documents/trials/$(trialId)/assignments/$(request.auth.uid)) &&
+      ((request.resource.data.section == 'prosecution' && assignedRole() == 'prosecutor') ||
+       (request.resource.data.section == 'defense' && assignedRole() == 'defender')); }
+    function validContent() { return request.resource.data.text is string &&
+      request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 5000 &&
+      request.resource.data.evidenceUrl is string && request.resource.data.evidenceUrl.size() <= 1000 &&
+      (request.resource.data.evidenceUrl == '' || request.resource.data.evidenceUrl.matches('^https?://.*'));
+    }
+    allow get, list: if admin() || resource.data.status == 'published' ||
+      (request.auth != null && resource.data.authorUid == request.auth.uid);
+    allow create: if canSubmit() && validContent() &&
+      request.resource.data.keys().hasOnly(['trialId','authorUid','authorName','section','text','evidenceUrl','status','feedback','createdAt']) &&
+      request.resource.data.trialId == trialId && request.resource.data.authorUid == request.auth.uid &&
+      request.resource.data.authorName == get(/databases/$(database)/documents/students/$(request.auth.uid)).data.displayName &&
+      request.resource.data.authorName is string && request.resource.data.authorName.size() <= 100 &&
+      request.resource.data.status in ['draft','pending'] && request.resource.data.feedback == '' &&
+      request.resource.data.createdAt == request.time;
+    allow update: if
+      (admin() && resource.data.status == 'pending' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','feedback']) &&
+        ((request.resource.data.status == 'published' && request.resource.data.feedback == '') ||
+         (request.resource.data.status == 'returned' && request.resource.data.feedback is string &&
+          request.resource.data.feedback.size() > 0 && request.resource.data.feedback.size() <= 1000)))
+      || (request.auth != null && resource.data.authorUid == request.auth.uid &&
+        resource.data.status in ['draft','returned'] && canSubmit() && validContent() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','evidenceUrl','status','feedback']) &&
+        request.resource.data.status in ['draft','pending'] && request.resource.data.feedback == '');
+    allow delete: if false;
+   }
+   match /assignments/{uid} {
+    allow get: if own(uid) || admin();
+    allow list: if admin();
+    allow create, update: if admin() && request.resource.data.keys().hasOnly(['role']) && request.resource.data.role in ['unassigned','prosecutor','defender','juror'];
+    allow delete: if false;
+   }
+  }
+  match /arguments/{id} { allow read: if true; allow write: if false; }
+  match /verdicts/{id} { allow read, write: if false; }
+  match /{document=**} { allow read, write: if false; }
+ }
+}
