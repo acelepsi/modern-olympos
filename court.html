@@ -148,15 +148,17 @@
            Never shown during the argument ('trial') phase, to anyone. -->
       <form class="vote-form" id="jury-vote-form" hidden>
         <div class="vote-choice-row">
-          <button type="button" data-choice="guilty">Guilty</button>
-          <button type="button" data-choice="not-guilty">Not Guilty</button>
+          <button type="button" data-choice="guilty" aria-pressed="false">Guilty</button>
+          <button type="button" data-choice="not-guilty" aria-pressed="false">Not Guilty</button>
         </div>
+        <p id="jury-selection-status" role="status" aria-live="polite">No verdict selected.</p>
         <textarea id="vote-justification" placeholder="Explain your verdict (at least 15 characters)…" required></textarea>
         <div class="submit-row">
           <button type="submit" id="cast-vote">Cast Final Vote</button>
         </div>
       </form>
 
+      <button id="retry-ballot" type="button" hidden>Retry ballot check</button>
       <p id="jury-vote-status" role="status" aria-live="polite"></p>
       <!-- Public results tally: visible to everyone once the trial is closed -->
       <div class="results-tally" id="results-tally" hidden>

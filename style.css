@@ -557,14 +557,14 @@ a { color: inherit; }
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.vote-choice-row button[data-choice="prosecution"]:hover,
-.vote-choice-row button[data-choice="prosecution"].selected {
+.vote-choice-row button[data-choice="guilty"]:hover,
+.vote-choice-row button[data-choice="guilty"].selected {
   border-color: var(--prosecution);
   background: var(--prosecution-dim);
 }
 
-.vote-choice-row button[data-choice="defense"]:hover,
-.vote-choice-row button[data-choice="defense"].selected {
+.vote-choice-row button[data-choice="not-guilty"]:hover,
+.vote-choice-row button[data-choice="not-guilty"].selected {
   border-color: var(--defense);
   background: var(--defense-dim);
 }
@@ -786,3 +786,5 @@ a { color: inherit; }
 .composer button[data-action="draft"] { background: transparent; border: 1px solid var(--line-on-dark); color: var(--parchment); }
 .composer button:focus-visible { outline: 2px solid var(--verdict-bright); outline-offset: 3px; }
 .empty-feed { padding: 12px 20px; color: var(--parchment-dim); opacity: .8; }
+
+.vote-choice-row button.selected { outline: 3px solid var(--verdict-bright); outline-offset: 2px; font-weight: 700; }
