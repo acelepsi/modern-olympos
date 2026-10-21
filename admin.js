@@ -20,15 +20,20 @@ $('activate-trial').addEventListener('click',async()=>{
  catch(err){status('Cannot activate trial: '+err.code)}finally{btn.disabled=false}
 });
 $('login-form').addEventListener('submit',async e=>{e.preventDefault();try{await signInWithEmailAndPassword(auth,$('email').value,$('password').value);$('password').value='';}catch(err){status('Sign-in failed: '+err.code)}});
-$('logout').addEventListener('click',()=>signOut(auth));
+async function logout(){
+ try{await signOut(auth)}catch(err){status('Sign-out failed: '+(err.code||err.message))}
+}
+$('logout').addEventListener('click',logout);
+$('switch-account').addEventListener('click',logout);
 onAuthStateChanged(auth,async user=>{
- $('dashboard').hidden=true;$('login-panel').hidden=!user;
+ $('dashboard').hidden=true;$('login-panel').hidden=!!user;
+ $('switch-account').hidden=!user;
  if(!user){status('');return}
  try{const p=await getDoc(doc(db,'students',user.uid));if(!p.exists()||p.data().active!==true||p.data().accountType!=='teacher'){status('This account is not authorized as administrator.');return}
  // The Firestore rules are the real authorization boundary, not this UI check.
  const [ss,tt]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'trials'))]);
  students=ss.docs.filter(x=>x.data().accountType==='student').map(x=>({id:x.id,...x.data()}));trials=tt.docs.map(x=>({id:x.id,...x.data()}));
- $('identity').textContent='Signed in as '+(p.data().displayName||user.email);$('dashboard').hidden=false;$('login-panel').hidden=true;renderTrials();await renderStudents();status('Administrator access verified.');
+ $('identity').textContent='Signed in as '+(p.data().displayName||user.email);$('dashboard').hidden=false;$('login-panel').hidden=true;$('switch-account').hidden=true;renderTrials();await renderStudents();status('Administrator access verified.');
  }catch(err){status('Access denied or data could not be loaded: '+err.code)}
 });
 function renderTrials(){

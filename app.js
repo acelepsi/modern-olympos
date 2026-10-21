@@ -176,6 +176,8 @@ function subscribeAssignmentForActiveTrial(user, revision) {
   unsubscribeAssignment = null;
   currentAssignment = null;
   alreadyVoted = false;
+  ballotError = "";
+  ballotLookupFailed = false;
   checkingVote = true;
   renderIdentity();
   if (!user || !activeTrialId) return;
@@ -300,7 +302,11 @@ let lastKnownSession = null;
 let voteRevision = 0;
 let alreadyVoted = false;
 let checkingVote = false;
+let ballotError = '';
+let ballotLookupFailed = false;
 const voteStatus = document.getElementById('jury-vote-status');
+const retryBallot = document.getElementById('retry-ballot');
+retryBallot.addEventListener('click', refreshMyVote);
 function renderPublicVerdict() {
   const tally = document.getElementById('results-tally');
   const summary = currentTrial.verdictSummary;
@@ -313,9 +319,11 @@ function renderPublicVerdict() {
 }
 function applyJuryVisibility(session) {
   lastKnownSession = session;
-  const canVote = !!(session && session.role === 'juror' && activeTrialId && currentTrial.status === 'verdict' && !alreadyVoted && !checkingVote);
+  const canVote = !!(session && session.role === 'juror' && activeTrialId && currentTrial.status === 'verdict' && !alreadyVoted && !checkingVote && !ballotLookupFailed);
   el.juryVoteForm.hidden = !canVote;
+  retryBallot.hidden = !(session?.role === 'juror' && ballotLookupFailed && !checkingVote && currentTrial.status === 'verdict');
   if (voteStatus) voteStatus.textContent = currentTrial.status === 'closed' ? 'Voting closed.' :
+    ballotError && session?.role === 'juror' ? ballotError :
     alreadyVoted && session?.role === 'juror' ? 'Your final vote was recorded. Thank you.' :
     checkingVote && session?.role === 'juror' ? 'Checking your ballot…' :
     currentTrial.status === 'verdict' && session?.role !== 'juror' ? 'Voting is open for assigned jurors only.' : '';
@@ -323,6 +331,8 @@ function applyJuryVisibility(session) {
 async function refreshMyVote() {
   const rev = ++voteRevision;
   alreadyVoted = false;
+  ballotError = '';
+  ballotLookupFailed = false;
   const user = auth.currentUser;
   if(!user || !activeTrialId || currentAssignment?.role !== 'juror'){
     checkingVote=false;applyJuryVisibility(lastKnownSession);return;
@@ -332,20 +342,21 @@ async function refreshMyVote() {
     const snap=await getDoc(doc(db,'trials',activeTrialId,'votes',user.uid));
     if(rev!==voteRevision)return;
     alreadyVoted=snap.exists();
-  }catch(err){if(rev!==voteRevision)return;alreadyVoted=true;voteStatus.textContent='Cannot verify ballot: '+(err.code||err.message);}
+  }catch(err){if(rev!==voteRevision)return;ballotLookupFailed=true;ballotError='Cannot verify ballot: '+(err.code||err.message)+'. Retry the ballot check.';}
   if(rev===voteRevision){checkingVote=false;applyJuryVisibility(lastKnownSession);}
 }
 // -----------------------------------------------------------------
-// Jury vote choice buttons: local selection state only (pure UI).
-// Submitting to Firestore (addDoc on `verdicts`) is a TODO for the
-// next step, same as posting arguments — this page is UX/wiring
-// only for now.
+// Jury selection and immutable ballot submission.
 // -----------------------------------------------------------------
 let selectedChoice = null;
 el.voteChoiceButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     selectedChoice = btn.dataset.choice;
-    el.voteChoiceButtons.forEach((b) => b.classList.toggle("selected", b === btn));
+    el.voteChoiceButtons.forEach((b) => {
+      b.classList.toggle("selected", b === btn);
+      b.setAttribute("aria-pressed", String(b === btn));
+    });
+    document.getElementById("jury-selection-status").textContent = "Selected verdict: " + btn.textContent + ".";
   });
 });
 
@@ -355,16 +366,18 @@ el.juryVoteForm.addEventListener('submit', async (e) => {
   const user=auth.currentUser;
   if(!selectedChoice || !['guilty','not-guilty'].includes(selectedChoice))return alert('Select Guilty or Not Guilty.');
   if(reason.length<15 || reason.length>2000)return alert('Write a reason between 15 and 2000 characters.');
-  if(!user || !activeTrialId || currentTrial.status!=='verdict' || currentAssignment?.role!=='juror' || alreadyVoted || checkingVote)return;
+  if(!user || !activeTrialId || currentTrial.status!=='verdict' || currentAssignment?.role!=='juror' || alreadyVoted || checkingVote || ballotLookupFailed)return;
   if(!confirm('Your final vote cannot be changed. Submit now?'))return;
   const trialId=activeTrialId;
+  ballotError='';
   checkingVote=true;applyJuryVisibility(lastKnownSession);
   try{
     await setDoc(doc(db,'trials',trialId,'votes',user.uid),{choice:selectedChoice,reason,castAt:serverTimestamp()});
     alreadyVoted=true;el.voteJustification.value='';selectedChoice=null;
-    el.voteChoiceButtons.forEach(b=>b.classList.remove('selected'));
+    el.voteChoiceButtons.forEach(b=>{b.classList.remove('selected');b.setAttribute('aria-pressed','false')});
+    document.getElementById('jury-selection-status').textContent='No verdict selected.';
     voteStatus.textContent='Your final vote was recorded.';
-  }catch(err){voteStatus.textContent='Vote failed: '+(err.code||err.message);}
+  }catch(err){ballotError='Vote failed: '+(err.code||err.message)+'. Your vote has not been confirmed. Retry or reload to check your ballot.';}
   finally{checkingVote=false;applyJuryVisibility(lastKnownSession);}
 });
 
