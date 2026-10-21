@@ -6,7 +6,7 @@ const { join } = require('node:path');
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
 const {
   doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  query, where, serverTimestamp, Timestamp, writeBatch, setLogLevel,
+  query, where, serverTimestamp, Timestamp, writeBatch, setLogLevel, getDocFromServer, getDocsFromServer, runTransaction,
 } = require('firebase/firestore');
 
 const PROJECT = 'demo-modern-olympos';
@@ -347,3 +347,123 @@ test('draft deletion and overlong return feedback remain denied', async () => {
   for (const uid of ['prosecutor', ADMIN]) await assertFails(deleteDoc(ref(uid, 'trials/case-a/submissions/draft')));
   await assertFails(updateDoc(ref(ADMIN, 'trials/case-a/submissions/pending'), { status: 'returned', feedback: 'x'.repeat(1001) }));
 });
+
+// Phase 5: immutable closure is the barrier between voting and a server tally.
+for (const [from, to] of [['trial', 'trial'], ['trial', 'verdict'], ['trial', 'closed'], ['verdict', 'verdict'], ['verdict', 'closed'], ['closed', 'closed']]) {
+  test(`forward lifecycle transition remains allowed: ${from} -> ${to}`, async () => {
+    await seed({ 'trials/lifecycle': { title: 'Synthetic lifecycle', status: from } });
+    await assertSucceeds(updateDoc(ref(ADMIN, 'trials/lifecycle'), { status: to }));
+  });
+}
+for (const [from, to] of [['closed', 'trial'], ['closed', 'verdict'], ['verdict', 'trial']]) {
+  test(`backward lifecycle transition is denied even without a summary: ${from} -> ${to}`, async () => {
+    await seed({ 'trials/lifecycle': { title: 'Synthetic lifecycle', status: from } });
+    await assertFails(updateDoc(ref(ADMIN, 'trials/lifecycle'), { status: to }));
+  });
+}
+test('an unpublished closed trial still permits title corrections but not empty totals', async () => {
+  await assertSucceeds(updateDoc(ref(ADMIN, 'trials/case-c'), { title: 'Corrected title' }));
+  await assertFails(updateDoc(ref(ADMIN, 'trials/case-c'), { verdictSummary: { guilty: 0, notGuilty: 0 } }));
+});
+test('legacy zero summaries remain readable and title-editable without replacement', async () => {
+  await seed({ 'trials/legacy-zero': { title: 'Legacy', status: 'closed', verdictSummary: { guilty: 0, notGuilty: 0 } } });
+  await assertSucceeds(getDoc(ref(null, 'trials/legacy-zero')));
+  await assertSucceeds(updateDoc(ref(ADMIN, 'trials/legacy-zero'), { title: 'Legacy corrected' }));
+  await assertFails(updateDoc(ref(ADMIN, 'trials/legacy-zero'), { verdictSummary: { guilty: 1, notGuilty: 0 } }));
+});
+async function publishServerCounts(client) {
+  const trial = doc(client, 'trials/case-b');
+  const initial = await getDocFromServer(trial);
+  if (initial.data().status !== 'closed') throw Error('Not closed');
+  const votes = await getDocsFromServer(collection(client, 'trials/case-b/votes'));
+  const summary = { guilty: 0, notGuilty: 0 };
+  for (const vote of votes.docs) {
+    if (vote.data().choice === 'guilty') summary.guilty++;
+    else if (vote.data().choice === 'not-guilty') summary.notGuilty++;
+    else throw Error('Malformed ballot');
+  }
+  await runTransaction(client, async transaction => {
+    const latest = await transaction.get(trial);
+    if (latest.data().status !== 'closed' || 'verdictSummary' in latest.data()) throw Error('Not publishable');
+    transaction.update(trial, { verdictSummary: summary });
+  });
+  return summary;
+}
+test('a vote racing closure is either fully counted or rejected, and late votes stay rejected', async () => {
+  const result = await Promise.allSettled([
+    setDoc(ref('juror', 'trials/case-b/votes/juror'), ballot({ choice: 'not-guilty' })),
+    updateDoc(ref(ADMIN, 'trials/case-b'), { status: 'closed' }),
+  ]);
+  assert.equal(result[1].status, 'fulfilled');
+  const vote = await getDocFromServer(ref('juror', 'trials/case-b/votes/juror'));
+  assert.equal(vote.exists(), result[0].status === 'fulfilled');
+  if (result[0].status === 'rejected') assert.equal(result[0].reason.code, 'permission-denied');
+  const summary = await publishServerCounts(db(ADMIN));
+  assert.deepEqual(summary, { guilty: 1, notGuilty: vote.exists() ? 1 : 0 });
+  await seed({ 'students/late-juror': { displayName: 'Late', active: true, accountType: 'student' }, 'trials/case-b/assignments/late-juror': { role: 'juror' } });
+  await assertFails(setDoc(ref('late-juror', 'trials/case-b/votes/late-juror'), ballot()));
+});
+test('simultaneous valid jury votes are all included after acknowledged closure', async () => {
+  await seed({ 'students/new-juror': { displayName: 'New', active: true, accountType: 'student' }, 'trials/case-b/assignments/new-juror': { role: 'juror' } });
+  await Promise.all([
+    assertSucceeds(setDoc(ref('juror', 'trials/case-b/votes/juror'), ballot())),
+    assertSucceeds(setDoc(ref('new-juror', 'trials/case-b/votes/new-juror'), ballot({ choice: 'not-guilty' }))),
+  ]);
+  await assertSucceeds(updateDoc(ref(ADMIN, 'trials/case-b'), { status: 'closed' }));
+  assert.deepEqual(await publishServerCounts(db(ADMIN)), { guilty: 2, notGuilty: 1 });
+});
+test('two administrator publication transactions result in exactly one stored summary', async () => {
+  await updateDoc(ref(ADMIN, 'trials/case-b'), { status: 'closed' });
+  const secondClient = env.authenticatedContext(ADMIN).firestore();
+  const results = await Promise.allSettled([publishServerCounts(db(ADMIN)), publishServerCounts(secondClient)]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const final = await getDocFromServer(ref(ADMIN, 'trials/case-b'));
+  assert.deepEqual(final.data().verdictSummary, { guilty: 1, notGuilty: 0 });
+});
+test('publication racing initial closure either waits for closure or fails without storing premature totals', async () => {
+  const results = await Promise.allSettled([
+    publishServerCounts(db(ADMIN)),
+    updateDoc(ref(ADMIN, 'trials/case-b'), { status: 'closed' }),
+  ]);
+  assert.equal(results[1].status, 'fulfilled');
+  if (results[0].status === 'rejected') {
+    const trial = await getDocFromServer(ref(ADMIN, 'trials/case-b'));
+    assert.equal('verdictSummary' in trial.data(), false);
+    await publishServerCounts(db(ADMIN));
+  }
+  const final = await getDocFromServer(ref(ADMIN, 'trials/case-b'));
+  assert.deepEqual(final.data().verdictSummary, { guilty: 1, notGuilty: 0 });
+});
+test('later role or active changes do not silently discard an already-cast ballot', async () => {
+  await seed({ 'students/other-juror': { displayName: 'Other', active: false, accountType: 'student' }, 'trials/case-b/assignments/other-juror': { role: 'unassigned' } });
+  await updateDoc(ref(ADMIN, 'trials/case-b'), { status: 'closed' });
+  assert.deepEqual(await publishServerCounts(db(ADMIN)), { guilty: 1, notGuilty: 0 });
+});
+
+test('a concurrent title correction retries publication without changing the stable tally', async () => {
+  await updateDoc(ref(ADMIN, 'trials/case-b'), { status: 'closed' });
+  let notifyRead, releaseRead, attempts = 0;
+  const readStarted = new Promise(resolve => { notifyRead = resolve; });
+  const release = new Promise(resolve => { releaseRead = resolve; });
+  const trial = ref(ADMIN, 'trials/case-b');
+  const publishing = runTransaction(db(ADMIN), async transaction => {
+    const current = await transaction.get(trial); attempts++;
+    assert.equal(current.data().status, 'closed');
+    if (attempts === 1) { notifyRead(); await release; }
+    transaction.update(trial, { verdictSummary: { guilty: 1, notGuilty: 0 } });
+  });
+  await Promise.race([readStarted, publishing.then(() => { throw Error('Transaction completed without the expected read barrier'); })]);
+  try { await updateDoc(ref(ADMIN, 'trials/case-b'), { title: 'Corrected while publishing' }); }
+  finally { releaseRead(); }
+  await publishing;
+  assert.ok(attempts >= 2);
+  const final = await getDocFromServer(trial);
+  assert.equal(final.data().title, 'Corrected while publishing');
+  assert.deepEqual(final.data().verdictSummary, { guilty: 1, notGuilty: 0 });
+});
+for (const legacy of [{ title: 'Missing phase' }, { title: 'Old phase', status: 'archived-old' }]) {
+  test(`legacy trial phase repair remains allowed: ${legacy.status || 'missing'}`, async () => {
+    await seed({ 'trials/legacy-phase': legacy });
+    await assertSucceeds(updateDoc(ref(ADMIN, 'trials/legacy-phase'), { status: 'trial' }));
+  });
+}
