@@ -32,7 +32,7 @@ function harness(file) {
     initializeApp: () => ({}), getAuth: () => auth, getFirestore: () => ({}),
     onAuthStateChanged: (_, fn) => authCallbacks.push(user => { auth.currentUser = user; return fn(user); }),
     onSnapshot: (ref, next, error) => { const sub = { ref, next, error }; snapshots.push(sub); return () => { sub.stopped = true; }; },
-    doc: (...args) => args.slice(1), collection: () => ({}), query: () => ({}), where: () => ({}),
+    doc: (...args) => args.slice(1), collection: (...args) => args.slice(1), query: () => ({}), where: () => ({}),
     getDoc: async () => ({ exists: () => false }), getDocs: async () => ({ docs: [] }),
     setDoc: async () => {}, updateDoc: async () => {}, addDoc: async () => {}, serverTimestamp: () => 'server-time',
     signOut: async () => {}, signInWithEmailAndPassword: async () => {},
@@ -319,7 +319,7 @@ test('a new trial can vote while a previous trial write finishes', async () => {
 });
 for (const fn of ['renderStudents', 'loadReviewQueue', 'refreshVotes']) {
   test(`late ${fn} result does not repopulate signed-out administrator data`, async () => {
-    const h = harness('admin.js'), wait = deferred();
+    const h = await adminTrials(), wait = deferred();
     h.run("students=[{id:'student',displayName:'Private name'}];");
     h.get('dashboard').hidden = false; h.get('trial-select').value = 'case-a';
     h.c.getDocs = () => wait.promise;
@@ -332,3 +332,235 @@ for (const fn of ['renderStudents', 'loadReviewQueue', 'refreshVotes']) {
     assert.equal(h.run('students.length'), 0);
   });
 }
+
+async function adminTrials() {
+  const h = harness('admin.js');
+  h.c.getDoc = async () => snapshot({ active: true, accountType: 'teacher' });
+  h.c.getDocs = async ref => {
+    if (ref[0] === 'students') return { docs: [{ id: 'student', data: () => ({ displayName: 'Student', accountType: 'student' }) }] };
+    if (ref.length === 1 && ref[0] === 'trials') return { docs: ['case-a', 'case-b'].map(id => ({ id, data: () => ({ title: id, status: 'trial' }) })) };
+    return { size: 0, docs: [] };
+  };
+  await h.authCallbacks[0]({ uid: 'admin' });
+  return h;
+}
+function textTree(node) {
+  return [node.textContent, ...node.children.map(textTree)].join(' ');
+}
+function panelResult(kind, label) {
+  if (kind === 'roles') return { docs: [{ id: 'student', data: () => ({ role: label === 'new' ? 'juror' : 'defender' }) }] };
+  if (kind === 'review') return { docs: [{ id: label, data: () => ({ status: 'pending', authorName: label, section: 'prosecution', text: label + ' argument' }) }] };
+  return { size: label === 'new' ? 2 : 9, docs: [] };
+}
+const panelFns = { roles: 'renderStudents', review: 'loadReviewQueue', votes: 'refreshVotes' };
+const panelIds = { roles: 'student-rows', review: 'review-list', votes: 'vote-count' };
+for (const kind of Object.keys(panelFns)) {
+  for (const ending of ['resolve', 'reject']) {
+    test(`${kind}: old ${ending} after A-B-A selection cannot replace the newest panel`, async () => {
+      const h = await adminTrials(), wait = deferred();
+      h.c.getDocs = ref => ref.at(-1) === ({ roles: 'assignments', review: 'submissions', votes: 'votes' })[kind] ? wait.promise : Promise.resolve({ size: 0, docs: [] });
+      const old = h.run(panelFns[kind] + '()');
+      h.c.getDocs = async ref => panelResult(({ assignments: 'roles', submissions: 'review', votes: 'votes' })[ref.at(-1)], 'new');
+      h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+      h.get('trial-select').value = 'case-a'; await h.get('trial-select').handlers.change();
+      const before = textTree(h.get(panelIds[kind])), message = h.get('status').textContent;
+      if (ending === 'reject') wait.reject({ code: 'unavailable' }); else wait.resolve(panelResult(kind, 'old'));
+      await old;
+      assert.equal(textTree(h.get(panelIds[kind])), before);
+      assert.equal(h.get('status').textContent, message);
+      if (kind === 'review') assert.match(before, /new argument/);
+      if (kind === 'votes') assert.match(before, /2 ballot/);
+      if (kind === 'roles') assert.equal(h.get('student-rows').children[0].children[1].children[0].value, 'juror');
+    });
+  }
+}
+test('authorization initializes all selected-trial panels explicitly without a timer', async () => {
+  const h = await adminTrials();
+  assert.equal(h.get('trial-select').value, 'case-a');
+  assert.equal(h.get('student-rows').children.length, 1);
+  assert.match(textTree(h.get('review-list')), /No pending/);
+  assert.match(h.get('vote-count').textContent, /0 ballot.*case-a/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'admin.js'), 'utf8'), /setTimeout/);
+});
+test('selection immediately clears stale controls and announces loading', async () => {
+  const h = await adminTrials(), wait = deferred();
+  h.c.getDocs = () => wait.promise;
+  h.get('trial-select').value = 'case-b'; const pending = h.get('trial-select').handlers.change();
+  assert.equal(h.get('student-rows').children.length, 0);
+  assert.match(h.get('roles-status').textContent, /Loading.*case-b/);
+  assert.match(h.get('review-list').textContent, /Loading.*case-b/);
+  assert.match(h.get('vote-count').textContent, /Loading.*case-b/);
+  assert.equal(h.get('publish-verdict').disabled, true);
+  wait.resolve({ docs: [], size: 0 }); await pending;
+  assert.equal(h.get('publish-verdict').disabled, false);
+});
+test('detached role and moderation buttons never write after selection changes', async () => {
+  const h = await adminTrials();
+  h.c.getDocs = async ref => panelResult(({ assignments: 'roles', submissions: 'review', votes: 'votes' })[ref.at(-1)], 'new');
+  await h.get('refresh-submissions').handlers.click();
+  const role = h.get('student-rows').children[0].children[2].children[0];
+  const approve = h.get('review-list').children.find(n => n.className === 'panel').children.find(n => n.textContent === 'Approve');
+  let writes = 0; h.c.setDoc = h.c.updateDoc = async () => { writes++; };
+  h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+  await role.handlers.click(); await approve.onclick();
+  assert.equal(writes, 0);
+});
+for (const existing of [true, false]) {
+  test(`${existing ? 'saving' : 'creating'} a trial refreshes roles, review and ballots`, async () => {
+    const h = await adminTrials(), reads = [], writes = [];
+    h.c.getDoc = async () => snapshot(existing ? { title: 'Before' } : null);
+    h.c.getDocs = async ref => { reads.push(Array.from(ref)); return { size: 0, docs: [] }; };
+    h.c.setDoc = h.c.updateDoc = async (ref, data) => { writes.push({ ref: Array.from(ref), data }); };
+    const id = existing ? 'case-a' : 'case-c';
+    h.get('trial-id').value = id; h.get('trial-title').value = 'Saved title'; h.get('trial-status').value = 'verdict';
+    await h.get('trial-form').handlers.submit({ preventDefault() {} });
+    assert.equal(h.get('trial-select').value, id);
+    assert.equal(h.get('trial-title').value, 'Saved title');
+    assert.deepEqual(reads.map(ref => ref.join('/')).sort(), ['assignments', 'submissions', 'votes'].map(c => `trials/${id}/${c}`).sort());
+    assert.deepEqual(writes[0].ref, ['trials', id]);
+  });
+}
+
+for (const kind of Object.keys(panelFns)) {
+  test(`${kind}: newest refresh wins within a single trial`, async () => {
+    const h = await adminTrials(), wait = deferred();
+    h.c.getDocs = () => wait.promise; const old = h.run(panelFns[kind] + '()');
+    h.c.getDocs = async () => panelResult(kind, 'new'); await h.run(panelFns[kind] + '()');
+    const before = textTree(h.get(panelIds[kind]));
+    wait.resolve(panelResult(kind, 'old')); await old;
+    assert.equal(textTree(h.get(panelIds[kind])), before);
+  });
+}
+for (const kind of ['role', 'moderation']) {
+  for (const ending of ['resolve', 'reject']) {
+    test(`${kind} write ${ending} after switching cannot alter the new panel or feedback`, async () => {
+      const h = await adminTrials(), wait = deferred(), writes = [];
+      h.c.getDocs = async ref => panelResult(({ assignments: 'roles', submissions: 'review', votes: 'votes' })[ref.at(-1)], 'new');
+      await h.get('refresh-submissions').handlers.click();
+      h.c.setDoc = h.c.updateDoc = (ref, data) => { writes.push({ ref: Array.from(ref), data }); return wait.promise; };
+      const control = kind === 'role' ? h.get('student-rows').children[0].children[2].children[0] : h.get('review-list').children.find(n => n.className === 'panel').children.find(n => n.textContent === 'Approve');
+      const pending = kind === 'role' ? control.handlers.click() : control.onclick();
+      h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+      const before = [textTree(h.get('student-rows')), textTree(h.get('review-list')), h.get('vote-count').textContent, h.get('status').textContent];
+      if (ending === 'reject') wait.reject({ code: 'unavailable' }); else wait.resolve();
+      await pending;
+      assert.deepEqual([textTree(h.get('student-rows')), textTree(h.get('review-list')), h.get('vote-count').textContent, h.get('status').textContent], before);
+      assert.equal(writes.length, 1); assert.equal(writes[0].ref[1], 'case-a');
+    });
+  }
+}
+for (const stage of ['trial', 'ballots']) {
+  test(`publication stops if selection changes during ${stage} lookup`, async () => {
+    const h = await adminTrials(), wait = deferred(); let writes = 0, confirms = 0;
+    h.c.getDoc = stage === 'trial' ? () => wait.promise : async () => snapshot({ status: 'closed' });
+    const ordinaryReads = h.c.getDocs;
+    h.c.getDocs = ref => stage === 'ballots' && ref.at(-1) === 'votes' && ref[1] === 'case-a' ? wait.promise : ordinaryReads(ref);
+    h.c.updateDoc = async () => { writes++; }; h.c.confirm = () => { confirms++; return true; };
+    const pending = h.get('publish-verdict').handlers.click(); await tick();
+    h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+    wait.resolve(stage === 'trial' ? snapshot({ status: 'closed' }) : { size: 0, docs: [] }); await pending;
+    assert.equal(writes, 0); assert.equal(confirms, 0);
+    assert.equal(h.get('publish-verdict').disabled, false);
+    assert.match(h.get('vote-count').textContent, /case-b/);
+  });
+}
+test('empty trial list permits creation but disables trial-specific actions', async () => {
+  const h = harness('admin.js');
+  h.c.getDoc = async () => snapshot({ active: true, accountType: 'teacher' });
+  h.c.getDocs = async () => ({ docs: [], size: 0 }); await h.authCallbacks[0]({ uid: 'admin' });
+  assert.equal(h.get('dashboard').hidden, false);
+  for (const id of ['activate-trial', 'publish-verdict', 'refresh-roles', 'refresh-submissions', 'refresh-votes']) assert.equal(h.get(id).disabled, true);
+  h.c.getDoc = async () => snapshot(null);
+  h.get('trial-id').value = 'first-case'; h.get('trial-title').value = 'First'; h.get('trial-status').value = 'trial';
+  await h.get('trial-form').handlers.submit({ preventDefault() {} });
+  assert.equal(h.get('trial-select').value, 'first-case');
+  assert.match(h.get('vote-count').textContent, /first-case/);
+});
+for (const stage of ['lookup', 'write']) {
+  test(`save completion does not steal a selection changed during ${stage}`, async () => {
+    const h = await adminTrials(), wait = deferred(), writing = deferred(); let writes = 0;
+    h.c.getDoc = stage === 'lookup' ? () => wait.promise : async () => snapshot({});
+    h.c.updateDoc = () => { writes++; writing.resolve(); return stage === 'write' ? wait.promise : Promise.resolve(); };
+    h.get('trial-title').value = 'New A';
+    const pending = h.get('trial-form').handlers.submit({ preventDefault() {} });
+    if (stage === 'write') await writing.promise;
+    h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+    wait.resolve(stage === 'lookup' ? snapshot({}) : undefined); await pending;
+    assert.equal(h.get('trial-select').value, 'case-b');
+    assert.equal(h.get('trial-title').value, 'case-b');
+    assert.match(h.get('vote-count').textContent, /case-b/);
+    assert.equal(writes, stage === 'lookup' ? 0 : 1);
+  });
+}
+test('failed panel load clears old data, disables publication and supports retry', async () => {
+  const h = await adminTrials();
+  h.c.getDocs = async () => { throw { code: 'unavailable' }; };
+  h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+  assert.equal(h.get('student-rows').children.length, 0);
+  for (const id of ['roles-status', 'review-list', 'vote-count']) assert.match(h.get(id).textContent, /Cannot.*case-b.*unavailable/);
+  assert.equal(h.get('publish-verdict').disabled, true);
+  assert.equal(h.get('refresh-votes').disabled, false);
+  assert.equal(h.get('refresh-submissions').disabled, false);
+  assert.equal(h.get('refresh-roles').disabled, false);
+  h.c.getDocs = async () => ({ docs: [], size: 0 });
+  await h.get('refresh-roles').handlers.click();
+  assert.equal(h.get('student-rows').children.length, 1);
+  await h.get('refresh-votes').handlers.click();
+  assert.equal(h.get('publish-verdict').disabled, false);
+  assert.match(h.get('vote-count').textContent, /0 ballot.*case-b/);
+});
+test('saving a trial clears dependent panels while their new reads are pending', async () => {
+  const h = await adminTrials(), wait = deferred(), loading = deferred();
+  h.c.getDoc = async () => snapshot({}); h.c.getDocs = () => { loading.resolve(); return wait.promise; };
+  const pending = h.get('trial-form').handlers.submit({ preventDefault() {} });
+  await loading.promise;
+  assert.match(h.get('roles-status').textContent, /Loading.*case-a/);
+  assert.match(h.get('review-list').textContent, /Loading.*case-a/);
+  assert.equal(h.get('publish-verdict').disabled, true);
+  wait.resolve({ docs: [], size: 0 }); await pending;
+  assert.equal(h.get('publish-verdict').disabled, false);
+});
+
+test('newly rendered role and review buttons write only to the selected trial', async () => {
+  const h = await adminTrials(), writes = [];
+  h.c.getDocs = async ref => panelResult(({ assignments: 'roles', submissions: 'review', votes: 'votes' })[ref.at(-1)], 'new');
+  h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+  h.c.setDoc = h.c.updateDoc = async (ref, data) => { writes.push({ ref: Array.from(ref), data }); };
+  const row = h.get('student-rows').children[0];
+  row.children[1].children[0].value = 'prosecutor'; await row.children[2].children[0].handlers.click();
+  const card = h.get('review-list').children.find(n => n.className === 'panel');
+  await card.children.find(n => n.textContent === 'Approve').onclick();
+  assert.deepEqual(writes.map(w => w.ref), [['trials', 'case-b', 'assignments', 'student'], ['trials', 'case-b', 'submissions', 'new']]);
+  assert.equal(writes[0].data.role, 'prosecutor'); assert.equal(writes[1].data.status, 'published');
+});
+test('verdict publication retains its existing count calculation and refreshes the current panel', async () => {
+  const h = await adminTrials(), writes = [];
+  h.c.getDoc = async () => snapshot({ status: 'closed' });
+  h.c.getDocs = async () => ({ size: 2, docs: ['guilty', 'not-guilty'].map(choice => ({ data: () => ({ choice }) })) });
+  h.c.updateDoc = async (ref, data) => { writes.push({ ref: Array.from(ref), data: JSON.parse(JSON.stringify(data)) }); };
+  await h.get('publish-verdict').handlers.click();
+  assert.deepEqual(writes, [{ ref: ['trials', 'case-a'], data: { verdictSummary: { guilty: 1, notGuilty: 1 } } }]);
+  assert.match(h.get('vote-count').textContent, /2 ballot.*case-a/);
+  assert.equal(h.get('publish-verdict').disabled, false);
+});
+test('old controls cannot write even before a changed dropdown dispatches its event', async () => {
+  const h = await adminTrials();
+  const role = h.get('student-rows').children[0].children[2].children[0];
+  let writes = 0; h.c.setDoc = async () => { writes++; };
+  h.get('trial-select').value = 'case-b'; await role.handlers.click();
+  assert.equal(writes, 0);
+});
+test('initial panels wait for authorization and collection loading, not elapsed time', async () => {
+  const h = harness('admin.js'), profile = deferred(), collections = deferred(), collectionStarted = deferred(), reads = [];
+  h.c.getDoc = () => profile.promise;
+  h.c.getDocs = ref => { reads.push(Array.from(ref)); collectionStarted.resolve(); return collections.promise; };
+  const pending = h.authCallbacks[0]({ uid: 'admin' });
+  assert.equal(h.get('dashboard').hidden, true); assert.equal(reads.length, 0);
+  profile.resolve(snapshot({ active: true, accountType: 'teacher' })); await collectionStarted.promise;
+  assert.equal(h.get('dashboard').hidden, true);
+  h.c.getDocs = async ref => { reads.push(Array.from(ref)); return { docs: [], size: 0 }; };
+  collections.resolve({ docs: [{ id: 'case-a', data: () => ({ title: 'Case A', status: 'trial' }) }] });
+  await pending;
+  assert.equal(h.get('dashboard').hidden, false);
+  for (const name of ['assignments', 'submissions', 'votes']) assert.ok(reads.some(ref => ref.join('/') === `trials/case-a/${name}`));
+});
