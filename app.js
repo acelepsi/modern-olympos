@@ -113,6 +113,49 @@ let unsubscribeAssignment = null;
 let currentProfile = null;
 let currentAssignment = null;
 let authRevision = 0;
+let sessionUid;
+let contextGeneration = 0;
+let trialRevision = 0;
+
+function captureContext() {
+  return { generation: contextGeneration, uid: auth.currentUser?.uid, trialId: activeTrialId };
+}
+function isCurrentContext(context) {
+  return context.generation === contextGeneration && context.uid === auth.currentUser?.uid && context.trialId === activeTrialId;
+}
+// A new generation also rejects completions after switching away and back.
+function clearPrivateContext() {
+  contextGeneration++;
+  voteRevision++;
+  ballotWriteInFlight = false;
+  alreadyVoted = false;
+  checkingVote = false;
+  ballotLookupFailed = false;
+  ballotError = '';
+  selectedChoice = null;
+  for (const side of ['prosecution', 'defense']) {
+    const form = document.getElementById(side + '-composer');
+    form.reset();
+    delete form.dataset.editId;
+    form.querySelectorAll('button').forEach(button => { button.disabled = false; });
+    document.getElementById(side + '-feedback').textContent = '';
+  }
+  el.passwordInput.value = '';
+  setLoginStatus('', '');
+  el.voteJustification.value = '';
+  el.voteChoiceButtons.forEach(button => {
+    button.classList.remove('selected');
+    button.setAttribute('aria-pressed', 'false');
+  });
+  document.getElementById('jury-selection-status').textContent = 'No verdict selected.';
+  voteStatus.textContent = '';
+  retryBallot.hidden = true;
+  if (stopMine) stopMine();
+  stopMine = null;
+  mySubmissions = [];
+  document.getElementById('my-submissions').hidden = true;
+  document.getElementById('my-submissions-list').replaceChildren();
+}
 
 function codeToEmail(code) {
   const clean = code.trim().toUpperCase();
@@ -157,6 +200,10 @@ onAuthStateChanged(auth, (user) => {
   authRevision++;
   const revision = authRevision;
   stopListeners();
+  if (sessionUid !== user?.uid) {
+    sessionUid = user?.uid;
+    clearPrivateContext();
+  }
   currentProfile = null;
   currentAssignment = null;
   applySession(null);
@@ -165,7 +212,7 @@ onAuthStateChanged(auth, (user) => {
     if (revision !== authRevision) return;
     currentProfile = snap.exists() ? snap.data() : null;
     renderIdentity();
-  }, err => { console.error("Student profile access:", err); applySession(null); });
+  }, err => { if (revision !== authRevision) return; console.error("Student profile access:", err); applySession(null); });
   // The active trial is resolved independently below. It may change while signed in.
   subscribeAssignmentForActiveTrial(user, revision);
 
@@ -181,23 +228,27 @@ function subscribeAssignmentForActiveTrial(user, revision) {
   checkingVote = true;
   renderIdentity();
   if (!user || !activeTrialId) return;
+  const context = captureContext();
   unsubscribeAssignment = onSnapshot(
     doc(db, "trials", activeTrialId, "assignments", user.uid),
     snap => {
-      if (revision !== authRevision) return;
+      if (revision !== authRevision || !isCurrentContext(context)) return;
       currentAssignment = snap.exists() ? snap.data() : null;
       renderIdentity();
       refreshMyVote();
     },
-    err => { console.error("Trial assignment access:", err); currentAssignment = null; renderIdentity(); }
+    err => { if (revision !== authRevision || !isCurrentContext(context)) return; console.error("Trial assignment access:", err); currentAssignment = null; renderIdentity(); }
   );
 }
 
 // A public pointer selects the current case for every visitor, even before login.
 unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap => {
   const nextId = snap.exists() ? snap.data().trialId : null;
-  if(nextId !== activeTrialId){alreadyVoted=false;checkingVote=true;currentTrial.verdictSummary=null;renderPublicVerdict();}
   if (nextId === activeTrialId) return;
+  clearPrivateContext();
+  const revision = ++trialRevision;
+  currentTrial.verdictSummary = null;
+  renderPublicVerdict();
   activeTrialId = nextId || null;
   if (unsubscribeTrial) unsubscribeTrial();
   unsubscribeTrial = null;
@@ -208,6 +259,7 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
   setTrialStatus("closed");
   if (activeTrialId) {
     unsubscribeTrial = onSnapshot(doc(db, "trials", activeTrialId), trialSnap => {
+      if (revision !== trialRevision) return;
       if (!trialSnap.exists()) {
         if (title) title.textContent = "Trial unavailable";
         setTrialStatus("closed");
@@ -220,7 +272,7 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
       if (charge) charge.textContent = data.charge || "";
       setTrialStatus(data.status || "closed");
       refreshMyVote();
-    }, err => console.error("Active trial access:", err));
+    }, err => { if (revision === trialRevision) console.error("Active trial access:", err); });
   }
   subscribeAssignmentForActiveTrial(auth.currentUser, authRevision);
 }, err => console.error("Active trial settings access:", err));
@@ -304,6 +356,7 @@ let alreadyVoted = false;
 let checkingVote = false;
 let ballotError = '';
 let ballotLookupFailed = false;
+let ballotWriteInFlight = false;
 const voteStatus = document.getElementById('jury-vote-status');
 const retryBallot = document.getElementById('retry-ballot');
 retryBallot.addEventListener('click', refreshMyVote);
@@ -329,6 +382,9 @@ function applyJuryVisibility(session) {
     currentTrial.status === 'verdict' && session?.role !== 'juror' ? 'Voting is open for assigned jurors only.' : '';
 }
 async function refreshMyVote() {
+  // Snapshot-driven refreshes must not unlock an unacknowledged write.
+  if (ballotWriteInFlight) return;
+  const context = captureContext();
   const rev = ++voteRevision;
   alreadyVoted = false;
   ballotError = '';
@@ -339,11 +395,11 @@ async function refreshMyVote() {
   }
   checkingVote=true;applyJuryVisibility(lastKnownSession);
   try{
-    const snap=await getDoc(doc(db,'trials',activeTrialId,'votes',user.uid));
-    if(rev!==voteRevision)return;
+    const snap=await getDoc(doc(db,'trials',context.trialId,'votes',context.uid));
+    if(rev!==voteRevision || !isCurrentContext(context))return;
     alreadyVoted=snap.exists();
-  }catch(err){if(rev!==voteRevision)return;ballotLookupFailed=true;ballotError='Cannot verify ballot: '+(err.code||err.message)+'. Retry the ballot check.';}
-  if(rev===voteRevision){checkingVote=false;applyJuryVisibility(lastKnownSession);}
+  }catch(err){if(rev!==voteRevision || !isCurrentContext(context))return;ballotLookupFailed=true;ballotError='Cannot verify ballot: '+(err.code||err.message)+'. Retry the ballot check.';}
+  if(rev===voteRevision && isCurrentContext(context)){checkingVote=false;applyJuryVisibility(lastKnownSession);}
 }
 // -----------------------------------------------------------------
 // Jury selection and immutable ballot submission.
@@ -368,17 +424,20 @@ el.juryVoteForm.addEventListener('submit', async (e) => {
   if(reason.length<15 || reason.length>2000)return alert('Write a reason between 15 and 2000 characters.');
   if(!user || !activeTrialId || currentTrial.status!=='verdict' || currentAssignment?.role!=='juror' || alreadyVoted || checkingVote || ballotLookupFailed)return;
   if(!confirm('Your final vote cannot be changed. Submit now?'))return;
-  const trialId=activeTrialId;
+  const context=captureContext();
+  voteRevision++;
+  ballotWriteInFlight=true;
   ballotError='';
   checkingVote=true;applyJuryVisibility(lastKnownSession);
   try{
-    await setDoc(doc(db,'trials',trialId,'votes',user.uid),{choice:selectedChoice,reason,castAt:serverTimestamp()});
+    await setDoc(doc(db,'trials',context.trialId,'votes',context.uid),{choice:selectedChoice,reason,castAt:serverTimestamp()});
+    if(!isCurrentContext(context))return;
     alreadyVoted=true;el.voteJustification.value='';selectedChoice=null;
     el.voteChoiceButtons.forEach(b=>{b.classList.remove('selected');b.setAttribute('aria-pressed','false')});
     document.getElementById('jury-selection-status').textContent='No verdict selected.';
     voteStatus.textContent='Your final vote was recorded.';
-  }catch(err){ballotError='Vote failed: '+(err.code||err.message)+'. Your vote has not been confirmed. Retry or reload to check your ballot.';}
-  finally{checkingVote=false;applyJuryVisibility(lastKnownSession);}
+  }catch(err){if(!isCurrentContext(context))return;ballotError='Vote failed: '+(err.code||err.message)+'. Your vote has not been confirmed. Retry or reload to check your ballot.';}
+  finally{if(isCurrentContext(context)){ballotWriteInFlight=false;checkingVote=false;applyJuryVisibility(lastKnownSession);}}
 });
 
 // -----------------------------------------------------------------
@@ -454,6 +513,7 @@ for(const side of ['prosecution','defense']){
  const feedback=document.getElementById(side+'-feedback');
  const save=async status=>{
   const user=auth.currentUser;
+  const context=captureContext();
   if(!user||!activeTrialId||currentTrial.status!=='trial'||currentProfile?.active!==true||currentProfile?.accountType!=='student'||currentAssignment?.role!==(side==='prosecution'?'prosecutor':'defender')){feedback.textContent='You cannot submit in this trial or role.';return}
   const body=form.querySelector('textarea').value.trim(),link=form.querySelector('input[type=url]').value.trim();
   if(!body||body.length>5000){feedback.textContent='Please enter between 1 and 5000 characters.';return}
@@ -462,12 +522,13 @@ for(const side of ['prosecution','defense']){
   try{
    const editId=form.dataset.editId;
    if(editId){const existing=mySubmissions.find(x=>x.id===editId);if(!existing||!['draft','returned'].includes(existing.status)||existing.section!==side)throw Error('This draft can no longer be edited.');
-    await updateDoc(doc(db,'trials',activeTrialId,'submissions',editId),{text:body,evidenceUrl:link,status,feedback:''});
+    await updateDoc(doc(db,'trials',context.trialId,'submissions',editId),{text:body,evidenceUrl:link,status,feedback:''});
    }else{
-    await addDoc(submissionCollection(),{trialId:activeTrialId,authorUid:user.uid,authorName:currentProfile.displayName||'Student',section:side,text:body,evidenceUrl:link,status,feedback:'',createdAt:serverTimestamp()});
+    await addDoc(collection(db,'trials',context.trialId,'submissions'),{trialId:context.trialId,authorUid:user.uid,authorName:currentProfile.displayName||'Student',section:side,text:body,evidenceUrl:link,status,feedback:'',createdAt:serverTimestamp()});
    }
+   if(!isCurrentContext(context))return;
    form.reset();delete form.dataset.editId;feedback.textContent=status==='draft'?'Draft saved privately.':'Sent to administrator for approval.';
-  }catch(err){feedback.textContent='Save failed: '+(err.code||err.message);console.error(err)}finally{buttons.forEach(x=>x.disabled=false)}
+  }catch(err){if(!isCurrentContext(context))return;feedback.textContent='Save failed: '+(err.code||err.message);console.error(err)}finally{if(isCurrentContext(context))buttons.forEach(x=>x.disabled=false)}
  };
  form.addEventListener('submit',e=>{e.preventDefault();save('pending')});
  form.querySelector('[data-action=draft]').addEventListener('click',()=>save('draft'));

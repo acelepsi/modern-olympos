@@ -6,6 +6,8 @@ const app=initializeApp(config),auth=getAuth(app),db=getFirestore(app);
 const $=id=>document.getElementById(id),status=(s)=>{$('status').textContent=s};
 const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
+let authRevision=0;
+function currentAdmin(revision,uid){return revision===authRevision && auth.currentUser?.uid===uid}
 onSnapshot(doc(db,'settings','currentTrial'), snap=>{
  activeTrialId=snap.exists()?snap.data().trialId:null;
  const label=$('active-trial-label');
@@ -26,15 +28,22 @@ async function logout(){
 $('logout').addEventListener('click',logout);
 $('switch-account').addEventListener('click',logout);
 onAuthStateChanged(auth,async user=>{
+ const revision=++authRevision,uid=user?.uid;
+ students=[];trials=[];
+ for(const id of ['student-rows','review-list','trial-select'])$(id).replaceChildren();
+ for(const id of ['identity','vote-count'])$(id).textContent='';
+ for(const id of ['trial-id','trial-title','password'])$(id).value='';
+ status('');
  $('dashboard').hidden=true;$('login-panel').hidden=!!user;
  $('switch-account').hidden=!user;
  if(!user){status('');return}
- try{const p=await getDoc(doc(db,'students',user.uid));if(!p.exists()||p.data().active!==true||p.data().accountType!=='teacher'){status('This account is not authorized as administrator.');return}
+ try{const p=await getDoc(doc(db,'students',user.uid));if(!currentAdmin(revision,uid))return;if(!p.exists()||p.data().active!==true||p.data().accountType!=='teacher'){status('This account is not authorized as administrator.');return}
  // The Firestore rules are the real authorization boundary, not this UI check.
  const [ss,tt]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'trials'))]);
+ if(!currentAdmin(revision,uid))return;
  students=ss.docs.filter(x=>x.data().accountType==='student').map(x=>({id:x.id,...x.data()}));trials=tt.docs.map(x=>({id:x.id,...x.data()}));
- $('identity').textContent='Signed in as '+(p.data().displayName||user.email);$('dashboard').hidden=false;$('login-panel').hidden=true;$('switch-account').hidden=true;renderTrials();await renderStudents();status('Administrator access verified.');
- }catch(err){status('Access denied or data could not be loaded: '+err.code)}
+ $('identity').textContent='Signed in as '+(p.data().displayName||user.email);$('dashboard').hidden=false;$('login-panel').hidden=true;$('switch-account').hidden=true;renderTrials();await renderStudents();if(currentAdmin(revision,uid))status('Administrator access verified.');
+ }catch(err){if(currentAdmin(revision,uid))status('Access denied or data could not be loaded: '+err.code)}
 });
 function renderTrials(){
  const select=$('trial-select'),previous=select.value;
@@ -52,14 +61,16 @@ function syncTrialEditor(){
 }
 $('trial-select').addEventListener('change',()=>{syncTrialEditor();renderStudents()});
 $('trial-form').addEventListener('submit',async e=>{e.preventDefault();const id=$('trial-id').value.trim(),title=$('trial-title').value.trim(),statusValue=$('trial-status').value;if(!/^[a-z0-9-]+$/.test(id)||!title)return status('Invalid trial ID or title');try{const ref=doc(db,'trials',id),existing=await getDoc(ref);if(existing.exists())await updateDoc(ref,{title,status:statusValue});else await setDoc(ref,{title,status:statusValue});const item={id,title,status:statusValue};trials=trials.filter(t=>t.id!==id).concat(item);renderTrials();$('trial-select').value=id;syncTrialEditor();await renderStudents();status('Trial saved. Student roles were reloaded from Firestore.')}catch(err){status('Unable to save trial: '+err.code)}});
-async function renderStudents(){const trialId=$('trial-select').value,tbody=$('student-rows');tbody.replaceChildren();if(!trialId)return;let assigned={};try{const rows=await getDocs(collection(db,'trials',trialId,'assignments'));assigned=Object.fromEntries(rows.docs.map(x=>[x.id,x.data().role]));}catch(err){status('Cannot read assignments: '+err.code);return}
+async function renderStudents(){const revision=authRevision,uid=auth.currentUser?.uid;const trialId=$('trial-select').value,tbody=$('student-rows');tbody.replaceChildren();if(!trialId)return;let assigned={};try{const rows=await getDocs(collection(db,'trials',trialId,'assignments'));if(!currentAdmin(revision,uid))return;assigned=Object.fromEntries(rows.docs.map(x=>[x.id,x.data().role]));}catch(err){if(currentAdmin(revision,uid))status('Cannot read assignments: '+err.code);return}
 for(const student of students){const tr=document.createElement('tr'),name=document.createElement('td'),roleCell=document.createElement('td'),action=document.createElement('td'),select=document.createElement('select'),btn=document.createElement('button');name.textContent=student.displayName||student.id;for(const role of roles){const o=document.createElement('option');o.value=role;o.textContent=role;select.append(o)}select.value=roles.includes(assigned[student.id])?assigned[student.id]:'unassigned';btn.textContent='Save role';select.addEventListener('change',()=>{btn.textContent='Save role *'});btn.addEventListener('click',async()=>{btn.disabled=true;try{await setDoc(doc(db,'trials',trialId,'assignments',student.id),{role:select.value});btn.textContent='Saved';status(`Saved ${name.textContent}: ${select.value} for ${trialId}`)}catch(err){status('Unable to save role: '+err.code)}finally{btn.disabled=false}});roleCell.append(select);action.append(btn);tr.append(name,roleCell,action);tbody.append(tr)}}
 
 // v5 approval queue: only the administrator may list and moderate submissions.
 async function loadReviewQueue(){
+ const revision=authRevision,uid=auth.currentUser?.uid;
  const list=$('review-list');list.replaceChildren();const trialId=$('trial-select').value;
  if(!$('dashboard').hidden&&trialId){
   try{const snap=await getDocs(collection(db,'trials',trialId,'submissions'));
+   if(!currentAdmin(revision,uid))return;
    const pending=snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status==='pending');
    if(!pending.length){list.textContent='No pending submissions for this trial.';return}
    for(const post of pending){
@@ -78,21 +89,23 @@ async function loadReviewQueue(){
     }
     list.append(wrap);
    }
-  }catch(err){status('Cannot load submissions: '+(err.code||err.message))}
+  }catch(err){if(currentAdmin(revision,uid))status('Cannot load submissions: '+(err.code||err.message))}
  }
 }
 $('refresh-submissions').addEventListener('click',loadReviewQueue);
 $('trial-select').addEventListener('change',loadReviewQueue);
-onAuthStateChanged(auth,user=>{if(user)setTimeout(loadReviewQueue,800);else $('review-list').replaceChildren()});
+onAuthStateChanged(auth,user=>{const revision=authRevision;if(user)setTimeout(()=>{if(currentAdmin(revision,user.uid))loadReviewQueue()},800);else $('review-list').replaceChildren()});
 
 // v7: private juror ballots; only admin can list votes. Publish totals after closing.
 async function refreshVotes(){
+ const revision=authRevision,uid=auth.currentUser?.uid;
  const trialId=$('trial-select').value;
  if(!trialId || $('dashboard').hidden)return;
  try{
   const votes=await getDocs(collection(db,'trials',trialId,'votes'));
+  if(!currentAdmin(revision,uid))return;
   $('vote-count').textContent=`${votes.size} ballot(s) recorded for ${trialId}. Individual reasons are private to the administrator.`;
- }catch(err){status('Cannot read votes: '+(err.code||err.message));}
+ }catch(err){if(currentAdmin(revision,uid))status('Cannot read votes: '+(err.code||err.message));}
 }
 $('refresh-votes').addEventListener('click',refreshVotes);
 $('trial-select').addEventListener('change',refreshVotes);
