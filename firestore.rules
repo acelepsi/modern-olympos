@@ -47,7 +47,7 @@ service cloud.firestore {
       && request.resource.data.keys().hasOnly(['choice','reason','castAt'])
       && request.resource.data.choice in ['guilty','not-guilty']
       && request.resource.data.reason is string
-      && request.resource.data.reason.size() >= 15
+      && request.resource.data.reason.trim().size() >= 15
       && request.resource.data.reason.size() <= 2000
       && request.resource.data.castAt == request.time;
     allow update, delete: if false;
@@ -64,9 +64,9 @@ service cloud.firestore {
       ((request.resource.data.section == 'prosecution' && assignedRole() == 'prosecutor') ||
        (request.resource.data.section == 'defense' && assignedRole() == 'defender')); }
     function validContent() { return request.resource.data.text is string &&
-      request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 5000 &&
+      request.resource.data.text.trim().size() > 0 && request.resource.data.text.size() <= 5000 &&
       request.resource.data.evidenceUrl is string && request.resource.data.evidenceUrl.size() <= 1000 &&
-      (request.resource.data.evidenceUrl == '' || request.resource.data.evidenceUrl.matches('^https?://.*'));
+      (request.resource.data.evidenceUrl == '' || request.resource.data.evidenceUrl.matches('^[hH][tT][tT][pP][sS]?://.*'));
     }
     allow get, list: if admin() || resource.data.status == 'published' ||
       (request.auth != null && resource.data.authorUid == request.auth.uid);
@@ -82,7 +82,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','feedback']) &&
         ((request.resource.data.status == 'published' && request.resource.data.feedback == '') ||
          (request.resource.data.status == 'returned' && request.resource.data.feedback is string &&
-          request.resource.data.feedback.size() > 0 && request.resource.data.feedback.size() <= 1000)))
+          request.resource.data.feedback.trim().size() > 0 && request.resource.data.feedback.size() <= 1000)))
       || (request.auth != null && resource.data.authorUid == request.auth.uid &&
         resource.data.status in ['draft','returned'] && canSubmit() && validContent() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','evidenceUrl','status','feedback']) &&
