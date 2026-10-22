@@ -8,6 +8,8 @@ const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
 let authRevision=0, selectionRevision=0, selectedTrialId=null, adminAuthorized=false;
 let savingTrial=false;
+// Keep writes locked across trial reselection until the original operation settles.
+const pendingTrialSaves=new Set();
 const panels={roles:{request:0,ready:false},review:{request:0,ready:false},votes:{request:0,ready:false}};
 function currentAdmin(revision,uid){return revision===authRevision && auth.currentUser?.uid===uid}
 function selectionContext(){return {auth:authRevision,uid:auth.currentUser?.uid,selection:selectionRevision,trialId:selectedTrialId}}
@@ -52,7 +54,7 @@ function syncTrialEditor(){
 async function selectTrial(id){
  selectedTrialId=trials.some(t=>t.id===id)?id:null;
  $('trial-select').value=selectedTrialId||'';selectionRevision++;savingTrial=false;
- $('trial-form').querySelector('button').disabled=false;
+ $('trial-form').querySelector('button').disabled=pendingTrialSaves.has(selectedTrialId);
  $('activate-trial').disabled=!selectedTrialId||!adminAuthorized;
  syncTrialEditor();status('');
  return Promise.all([renderStudents(),loadReviewQueue(),refreshVotes()]);
@@ -100,7 +102,8 @@ $('trial-form').addEventListener('submit',async e=>{
  e.preventDefault();const context=selectionContext();if(!sameSelection(context)||savingTrial)return;
  const id=$('trial-id').value.trim(),title=$('trial-title').value.trim(),statusValue=$('trial-status').value;
  if(!/^[a-z0-9-]+$/.test(id)||!title)return status('Invalid trial ID or title');
- const btn=$('trial-form').querySelector('button');savingTrial=true;btn.disabled=true;
+ if(pendingTrialSaves.has(id))return;
+ const btn=$('trial-form').querySelector('button');pendingTrialSaves.add(id);savingTrial=true;btn.disabled=true;
  try{
   const ref=doc(db,'trials',id),existing=await getDocFromServer(ref);if(!sameSelection(context))return;
   requireServerSnapshot(existing);
@@ -108,9 +111,10 @@ $('trial-form').addEventListener('submit',async e=>{
    const phase=existing.data().status;
    if(phase==='closed'&&statusValue!=='closed')throw Error('Closed trials cannot be reopened. Create a new trial for another voting round.');
    if(phase==='verdict'&&statusValue==='trial')throw Error('Voting has opened; the argument phase cannot be reopened.');
-   if(phase!=='closed'&&statusValue==='closed'&&!confirm(`Close ${id} permanently? Check turnout and finish submission review first. Votes reaching the server after closure will be rejected. Unsent ballots will not count.`)){if(sameSelection(context))status('Closure cancelled. Trial was not changed.');return}
    if(!sameSelection(context))return;
   }
+  if(statusValue==='closed'&&(!existing.exists()||existing.data().status!=='closed')&&!confirm(`Permanently close trial ${id}? This action is irreversible: the trial cannot be reopened. No further jury votes will be accepted after closure. Unsent ballots will not count. Check turnout and finish submission review first. Select OK to permanently close the trial, or Cancel to leave it unchanged.`)){if(sameSelection(context))status('Closure cancelled. Trial was not changed.');return}
+  if(!sameSelection(context))return;
   if(existing.exists())await updateDoc(ref,{title,status:statusValue});else await setDoc(ref,{title,status:statusValue});
   if(!currentAdmin(context.auth,context.uid)||!adminAuthorized)return;
   trials=trials.filter(t=>t.id!==id).concat({id,title,status:statusValue});
@@ -120,7 +124,7 @@ $('trial-form').addEventListener('submit',async e=>{
   const results=await pending;
   if(sameSelection(savedContext))status(results.every(Boolean)?'Trial saved. All trial panels refreshed.':'Trial saved. Some panels could not be loaded; retry the affected panel.');
  }catch(err){if(sameSelection(context))status('Unable to save trial: '+(err.code||err.message))}
- finally{if(sameSelection(context)){savingTrial=false;btn.disabled=false}}
+ finally{pendingTrialSaves.delete(id);if(sameSelection(context))savingTrial=false;if(adminAuthorized&&!savingTrial)btn.disabled=pendingTrialSaves.has(selectedTrialId)}
 });
 async function renderStudents(){
  const {context,request,valid}=startPanel('roles');if(!valid)return false;

@@ -707,3 +707,68 @@ test('retry shows existing server totals without presenting a new publication as
   assert.match(h.get('status').textContent, /Previously published.*Guilty 4, Not Guilty 3/);
   assert.doesNotMatch(h.get('status').textContent, /Final tally published/);
 });
+
+for (const exists of [true, false]) {
+  test(`permanent closure requires explicit confirmation (${exists ? 'existing' : 'new'} trial)`, async () => {
+    const h = await adminTrials(); const writes = []; let prompt;
+    h.c.getDoc = async () => snapshot(exists ? { status: 'verdict' } : null);
+    h.c.confirm = message => { prompt = message; assert.equal(writes.length, 0); return true; };
+    h.c.updateDoc = h.c.setDoc = async (...args) => { writes.push(args); };
+    h.get('trial-status').value = 'closed';
+    await h.get('trial-form').handlers.submit({ preventDefault() {} });
+    assert.match(prompt, /irreversible/i); assert.match(prompt, /cannot be reopened/i);
+    assert.match(prompt, /No further jury votes will be accepted/);
+    assert.match(prompt, /OK.*Cancel/); assert.equal(writes.length, 1);
+    assert.equal(writes[0][1].status, 'closed');
+  });
+  test(`cancelling closure leaves ${exists ? 'existing' : 'new'} trial unchanged and allows retry`, async () => {
+    const h = await adminTrials(); let writes = 0;
+    h.c.getDoc = async () => snapshot(exists ? { status: 'verdict' } : null);
+    h.c.updateDoc = h.c.setDoc = async () => { writes++; };
+    h.get('trial-status').value = 'closed'; h.c.confirm = () => false;
+    await h.get('trial-form').handlers.submit({ preventDefault() {} });
+    assert.equal(writes, 0); assert.match(h.get('status').textContent, /cancelled.*not changed/i);
+    assert.equal(h.get('trial-form').querySelector('button').disabled, false);
+    h.c.confirm = () => true;
+    await h.get('trial-form').handlers.submit({ preventDefault() {} }); assert.equal(writes, 1);
+  });
+}
+for (const stage of ['read', 'write']) {
+  test(`closure suppresses duplicate actions during pending ${stage}`, async () => {
+    const h = await adminTrials(), wait = deferred(); let reads = 0, writes = 0, confirms = 0;
+    h.c.getDoc = async () => { reads++; return stage === 'read' ? wait.promise : snapshot({ status: 'verdict' }); };
+    h.c.updateDoc = async () => { writes++; if (stage === 'write') await wait.promise; };
+    h.c.confirm = () => { confirms++; return true; }; h.get('trial-status').value = 'closed';
+    const submit = () => h.get('trial-form').handlers.submit({ preventDefault() {} });
+    const first = submit(); await tick(); await tick();
+    assert.equal(h.get('trial-form').querySelector('button').disabled, true);
+    await submit(); assert.equal(reads, 1);
+    if (stage === 'write') {
+      h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+      h.get('trial-select').value = 'case-a'; await h.get('trial-select').handlers.change();
+      assert.equal(h.get('trial-form').querySelector('button').disabled, true);
+      h.get('trial-status').value = 'closed'; await submit(); assert.equal(reads, 1);
+    }
+    wait.resolve(snapshot({ status: 'verdict' })); await first;
+    assert.equal(writes, 1); assert.equal(confirms, 1);
+    assert.equal(h.get('trial-form').querySelector('button').disabled, false);
+  });
+}
+test('already closed trial title edits do not ask for closure again', async () => {
+  const h = await adminTrials(); let confirms = 0, writes = 0;
+  h.c.getDoc = async () => snapshot({ status: 'closed' });
+  h.c.confirm = () => { confirms++; return false; }; h.c.updateDoc = async () => { writes++; };
+  h.get('trial-status').value = 'closed';
+  await h.get('trial-form').handlers.submit({ preventDefault() {} });
+  assert.equal(confirms, 0); assert.equal(writes, 1);
+});
+test('failed closure releases its lock so the administrator can retry', async () => {
+  const h = await adminTrials(); let attempts = 0;
+  h.c.getDoc = async () => snapshot({ status: 'verdict' });
+  h.c.updateDoc = async () => { if (++attempts === 1) throw Error('Synthetic write failure'); };
+  h.get('trial-status').value = 'closed';
+  await h.get('trial-form').handlers.submit({ preventDefault() {} });
+  assert.match(h.get('status').textContent, /Unable to save.*Synthetic write failure/);
+  assert.equal(h.get('trial-form').querySelector('button').disabled, false);
+  await h.get('trial-form').handlers.submit({ preventDefault() {} }); assert.equal(attempts, 2);
+});
