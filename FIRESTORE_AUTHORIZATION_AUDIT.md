@@ -10,6 +10,16 @@ network-blocked. No finding is described as reproduced against production or as
 emulator-verified. See [FIRESTORE_SECURITY_TESTS.md](FIRESTORE_SECURITY_TESTS.md)
 for the exact execution status and Windows instructions.
 
+## Phase 5 update
+
+This document records the PR #4 baseline. Phase 5 makes closed trials terminal,
+prevents backward movement from voting to arguments, and rejects new empty
+summaries. The old lifecycle risk listed below is therefore historical.
+See [TRIAL_LIFECYCLE_AND_VERDICTS.md](TRIAL_LIFECYCLE_AND_VERDICTS.md) for the
+current protections, compatibility changes, remaining trust limits and policy
+proposals. The project owner reports that the original 106 security cases passed
+locally after PR #4; the current expanded suite's status is recorded separately.
+
 ## Confirmed defects addressed with small rule changes
 
 | Severity | Original mismatch | Change and compatibility |

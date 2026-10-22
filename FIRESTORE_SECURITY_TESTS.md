@@ -68,7 +68,7 @@ The CLI normally shuts its emulators down automatically after the tests finish.
 
 ## Coverage and expected failures
 
-The 106 emulator cases cover:
+The 125 emulator cases cover (106 existing cases plus 19 lifecycle cases):
 
 - Public trial/pointer/published-content reads and the legacy public arguments.
 - Private profiles and assignments, prohibited profile provisioning, forged
@@ -83,7 +83,9 @@ The 106 emulator cases cover:
   validation, duplicate and concurrent voting, immutable ballots and private
   written reasons.
 - Closure and one-time public tally publication; rejected invalid totals,
-  replacement and reopening after publication.
+  replacement, terminal closure even before publication, and forward-only phases.
+- Votes racing closure, simultaneous valid votes, competing publication
+  transactions, transaction retries after title edits, and legacy compatibility.
 - Explicit tests documenting current policy limits, described in
   [FIRESTORE_AUTHORIZATION_AUDIT.md](FIRESTORE_AUTHORIZATION_AUDIT.md).
 
@@ -93,18 +95,23 @@ permission denial. A missing emulator is a failure, not a skipped or passing
 security suite. JavaScript syntax/import checks are not rules compilation or
 security validation.
 
-## Validation recorded for this change
+## Phase 5 validation recorded in this environment
 
-- Executed: dependency installation, security-test JavaScript syntax/import
-  checks, the refusal guard when no emulator endpoint is set, and all **70**
-  existing mocked regression tests (passed).
-- Not executed: **all 106 Firestore emulator cases** and emulator compilation
-  of the edited rules. Emulator startup was attempted, but this development
-  environment returned HTTP 403 for the official emulator JAR download from
-  `storage.googleapis.com`. No test database was started or seeded here.
-- Required before accepting the rule change: run `npm.cmd run test:all` on a
-  machine that can download the official JAR. Any failed security assertion
-  must be investigated; do not weaken a rule simply to make a test pass.
+- The project owner reports all baseline 70 mocked and 106 security cases passed
+  locally after PR #4. That is separate from execution in this environment.
+- Executed here: all **92** current mocked regression tests passed; security-test
+  JavaScript syntax/import checks, test-inventory registration and whitespace
+  checks passed. No browser application or production configuration was run.
+- Not executed here: **all 125 current Firestore emulator cases** and compilation
+  of the phase 5 rule edits. The combined test command was attempted, but the
+  official emulator JAR download remains network-blocked (HTTP 403 from the
+  environment's proxy for `storage.googleapis.com`). No emulator database was
+  started or seeded here. Test inventory registration is not execution.
+- Required before accepting this change: run `npm.cmd run test:all` on a machine
+  that can download the official JAR. Investigate every failed assertion; do not
+  weaken rules simply to make a test pass.
 
-The package lock pins the development toolchain. It intentionally does not
-replace or bundle the site's existing browser SDK.
+See [TRIAL_LIFECYCLE_AND_VERDICTS.md](TRIAL_LIFECYCLE_AND_VERDICTS.md) for the
+lifecycle audit, compatibility implications, owner decisions, and the limit on
+proving administrator-supplied totals. The package lock still pins the test
+SDK/toolchain and does not replace the site's browser SDK.

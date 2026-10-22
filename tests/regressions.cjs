@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const root = path.join(__dirname, '..');
+class MockTimestamp { constructor(value) { this.value = value; } toMillis() { return this.value; } }
+const voteRecord = (choice='guilty', extra={}) => ({ id: 'synthetic-juror', data: () => ({ choice, reason: 'A sufficiently detailed reason.', castAt: new MockTimestamp(1000), ...extra }) });
 function element(textContent = '') {
   const classes = new Set(), fields = new Map();
   return {
@@ -34,6 +36,10 @@ function harness(file) {
     onSnapshot: (ref, next, error) => { const sub = { ref, next, error }; snapshots.push(sub); return () => { sub.stopped = true; }; },
     doc: (...args) => args.slice(1), collection: (...args) => args.slice(1), query: () => ({}), where: () => ({}),
     getDoc: async () => ({ exists: () => false }), getDocs: async () => ({ docs: [] }),
+    getDocFromServer: async (...args) => ({ metadata: { fromCache: false, hasPendingWrites: false }, ...await c.getDoc(...args) }),
+    getDocsFromServer: async (...args) => { const result = await c.getDocs(...args); return { metadata: { fromCache: false, hasPendingWrites: false }, size: result.docs.length, ...result }; },
+    runTransaction: async (_, callback) => { const writes = []; const result = await callback({ get: (...args) => c.getDocFromServer(...args), update: (...args) => { writes.push(args); } }); for (const args of writes) await c.updateDoc(...args); return result; },
+    Timestamp: MockTimestamp,
     setDoc: async () => {}, updateDoc: async () => {}, addDoc: async () => {}, serverTimestamp: () => 'server-time',
     signOut: async () => {}, signInWithEmailAndPassword: async () => {},
     confirm: () => true, alert: message => { throw Error(message); },
@@ -162,7 +168,7 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-const snapshot = data => ({ exists: () => data !== null, data: () => data });
+const snapshot = data => ({ exists: () => data !== null, data: () => data, metadata: { fromCache: false, hasPendingWrites: false } });
 const tick = () => Promise.resolve();
 async function emitAuth(h, user) {
   for (const callback of h.authCallbacks) await callback(user);
@@ -536,7 +542,7 @@ test('newly rendered role and review buttons write only to the selected trial', 
 test('verdict publication retains its existing count calculation and refreshes the current panel', async () => {
   const h = await adminTrials(), writes = [];
   h.c.getDoc = async () => snapshot({ status: 'closed' });
-  h.c.getDocs = async () => ({ size: 2, docs: ['guilty', 'not-guilty'].map(choice => ({ data: () => ({ choice }) })) });
+  h.c.getDocs = async () => ({ size: 2, docs: ['guilty', 'not-guilty'].map(choice => ({ data: () => voteRecord(choice).data() })) });
   h.c.updateDoc = async (ref, data) => { writes.push({ ref: Array.from(ref), data: JSON.parse(JSON.stringify(data)) }); };
   await h.get('publish-verdict').handlers.click();
   assert.deepEqual(writes, [{ ref: ['trials', 'case-a'], data: { verdictSummary: { guilty: 1, notGuilty: 1 } } }]);
@@ -563,4 +569,206 @@ test('initial panels wait for authorization and collection loading, not elapsed 
   await pending;
   assert.equal(h.get('dashboard').hidden, false);
   for (const name of ['assignments', 'submissions', 'votes']) assert.ok(reads.some(ref => ref.join('/') === `trials/case-a/${name}`));
+});
+
+async function publicationHarness() {
+  const h = await adminTrials();
+  h.c.getDoc = async () => snapshot({ status: 'closed' });
+  h.c.getDocs = async () => ({ size: 1, docs: [voteRecord()] });
+  return h;
+}
+for (const invalid of [[], [voteRecord('unknown')], [voteRecord('guilty', { reason: 'short' })], [voteRecord('guilty', { castAt: null })], [voteRecord('guilty', { extra: true })]]) {
+  test(`publication rejects empty or malformed ballot collections: ${invalid.length ? Object.keys(invalid[0].data()).join('/') + ':' + invalid[0].data().choice + ':' + invalid[0].data().reason.length + ':' + !!invalid[0].data().castAt : 'empty'}`, async () => {
+    const h = await publicationHarness(); let writes = 0;
+    h.c.getDocs = async () => ({ size: invalid.length, docs: invalid });
+    h.c.updateDoc = async () => { writes++; };
+    await h.get('publish-verdict').handlers.click();
+    assert.equal(writes, 0); assert.doesNotMatch(h.get('status').textContent, /Final tally published/);
+    assert.match(h.get('status').textContent, /ballot|reason|empty|record/i);
+  });
+}
+for (const metadata of [{ fromCache: true, hasPendingWrites: false }, { fromCache: false, hasPendingWrites: true }]) {
+  test(`publication rejects an unconfirmed ballot snapshot: ${JSON.stringify(metadata)}`, async () => {
+    const h = await publicationHarness(); let writes = 0;
+    h.c.getDocs = async () => ({ size: 1, docs: [voteRecord()], metadata });
+    h.c.updateDoc = async () => { writes++; };
+    await h.get('publish-verdict').handlers.click(); assert.equal(writes, 0);
+    assert.doesNotMatch(h.get('status').textContent, /Final tally published/);
+  });
+}
+test('publication transaction rechecks whether another administrator already published', async () => {
+  const h = await publicationHarness(); let writes = 0;
+  h.c.runTransaction = async (_, callback) => callback({ get: async () => snapshot({ status: 'closed', verdictSummary: { guilty: 1, notGuilty: 0 } }), update: () => { writes++; } });
+  h.c.updateDoc = async () => { writes++; };
+  await h.get('publish-verdict').handlers.click(); assert.equal(writes, 0);
+  assert.match(h.get('status').textContent, /already published/i);
+});
+test('publication transaction rejects a trial reopened by an older deployment', async () => {
+  const h = await publicationHarness(); let writes = 0;
+  h.c.runTransaction = async (_, callback) => callback({ get: async () => snapshot({ status: 'verdict' }), update: () => { writes++; } });
+  h.c.updateDoc = async () => { writes++; };
+  await h.get('publish-verdict').handlers.click(); assert.equal(writes, 0);
+});
+test('transaction failure never displays publication success and restores retry controls', async () => {
+  const h = await publicationHarness(); h.c.runTransaction = async () => { throw Error('Synthetic connection failure'); };
+  await h.get('publish-verdict').handlers.click();
+  assert.doesNotMatch(h.get('status').textContent, /Final tally published/);
+  assert.match(h.get('status').textContent, /not confirmed/i);
+  assert.equal(h.get('publish-verdict').disabled, false);
+});
+test('successful publication is distinguished from a subsequent count refresh failure', async () => {
+  const h = await publicationHarness(); let reads = 0;
+  h.c.getDocs = async () => { if (++reads > 1) throw Error('Refresh failed'); return { size: 1, docs: [voteRecord()] }; };
+  await h.get('publish-verdict').handlers.click();
+  assert.match(h.get('status').textContent, /published.*refresh failed/i);
+  assert.equal(h.get('publish-verdict').disabled, true);
+});
+test('server ballot-read failure cannot fall back to cached counts', async () => {
+  const h = await publicationHarness(); let writes = 0;
+  h.c.getDocsFromServer = async () => { throw Error('Offline'); };
+  h.c.updateDoc = async () => { writes++; };
+  await h.get('publish-verdict').handlers.click(); assert.equal(writes, 0);
+  assert.match(h.get('status').textContent, /Offline/);
+});
+
+for (const phase of ['trial', 'verdict']) {
+  test(`administrator receives a useful error when reopening closed to ${phase}`, async () => {
+    const h = await adminTrials(); let writes = 0;
+    h.c.getDoc = async () => snapshot({ status: 'closed' });
+    h.c.updateDoc = async () => { writes++; };
+    h.get('trial-status').value = phase;
+    await h.get('trial-form').handlers.submit({ preventDefault() {} });
+    assert.equal(writes, 0); assert.match(h.get('status').textContent, /cannot be reopened/i);
+  });
+}
+test('administrator can cancel permanent closure before any write', async () => {
+  const h = await adminTrials(); let writes = 0;
+  h.c.getDoc = async () => snapshot({ status: 'verdict' }); h.c.confirm = () => false;
+  h.c.updateDoc = async () => { writes++; }; h.get('trial-status').value = 'closed';
+  await h.get('trial-form').handlers.submit({ preventDefault() {} });
+  assert.equal(writes, 0);
+});
+test('publication rejects a cached trial snapshot before requesting ballots', async () => {
+  const h = await publicationHarness(); let reads = 0;
+  h.c.getDoc = async () => ({ ...snapshot({ status: 'closed' }), metadata: { fromCache: true, hasPendingWrites: false } });
+  h.c.getDocs = async () => { reads++; return { size: 1, docs: [voteRecord()] }; };
+  await h.get('publish-verdict').handlers.click(); assert.equal(reads, 0);
+  assert.match(h.get('status').textContent, /confirmed server snapshot/i);
+});
+test('publication rejects mismatched query size rather than trusting partial counts', async () => {
+  const h = await publicationHarness(); let writes = 0;
+  h.c.getDocs = async () => ({ size: 2, docs: [voteRecord()] }); h.c.updateDoc = async () => { writes++; };
+  await h.get('publish-verdict').handlers.click(); assert.equal(writes, 0);
+  assert.match(h.get('status').textContent, /inconsistent/i);
+});
+test('transaction retries do not repeat the confirmation or change the verified summary', async () => {
+  const h = await publicationHarness(); let confirms = 0; const queued = [];
+  h.c.confirm = () => { confirms++; return true; };
+  h.c.runTransaction = async (_, callback) => {
+    for (let attempt = 0; attempt < 2; attempt++) await callback({ get: async () => snapshot({ status: 'closed' }), update: (_, data) => { queued.push(JSON.stringify(data)); } });
+  };
+  await h.get('publish-verdict').handlers.click();
+  assert.equal(confirms, 1); assert.equal(queued.length, 2); assert.equal(queued[0], queued[1]);
+  assert.match(h.get('status').textContent, /Final tally published/);
+});
+test('lost commit acknowledgement never claims success and retry recognizes existing totals', async () => {
+  const h = await publicationHarness(); let writes = 0;
+  h.c.updateDoc = async () => {
+    writes++; h.c.getDoc = async () => snapshot({ status: 'closed', verdictSummary: { guilty: 1, notGuilty: 0 } });
+    throw Error('Acknowledgement lost');
+  };
+  await h.get('publish-verdict').handlers.click();
+  assert.match(h.get('status').textContent, /not confirmed/i); assert.doesNotMatch(h.get('status').textContent, /Final tally published/);
+  await h.get('publish-verdict').handlers.click();
+  assert.equal(writes, 1); assert.match(h.get('status').textContent, /already published/i);
+});
+test('a delayed transaction read cannot publish after selection changes', async () => {
+  const h = await publicationHarness(), waiting = deferred(), started = deferred(); let writes = 0;
+  h.c.runTransaction = async (_, callback) => callback({ get: () => { started.resolve(); return waiting.promise; }, update: () => { writes++; } });
+  const pending = h.get('publish-verdict').handlers.click(); await started.promise;
+  h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+  const message = h.get('status').textContent;
+  waiting.resolve(snapshot({ status: 'closed' })); await pending;
+  assert.equal(writes, 0); assert.equal(h.get('status').textContent, message);
+});
+
+test('cancelled publication clears loading feedback and never starts a transaction', async () => {
+  const h = await publicationHarness(); let transactions = 0;
+  h.c.confirm = () => false; h.c.runTransaction = async () => { transactions++; };
+  await h.get('publish-verdict').handlers.click();
+  assert.equal(transactions, 0); assert.match(h.get('status').textContent, /cancelled.*No totals/i);
+  assert.equal(h.get('publish-verdict').disabled, false);
+});
+test('retry shows existing server totals without presenting a new publication as successful', async () => {
+  const h = await publicationHarness(); let writes = 0;
+  h.c.getDoc = async () => snapshot({ status: 'closed', verdictSummary: { guilty: 4, notGuilty: 3 } });
+  h.c.updateDoc = async () => { writes++; };
+  await h.get('publish-verdict').handlers.click(); assert.equal(writes, 0);
+  assert.match(h.get('status').textContent, /Previously published.*Guilty 4, Not Guilty 3/);
+  assert.doesNotMatch(h.get('status').textContent, /Final tally published/);
+});
+
+for (const exists of [true, false]) {
+  test(`permanent closure requires explicit confirmation (${exists ? 'existing' : 'new'} trial)`, async () => {
+    const h = await adminTrials(); const writes = []; let prompt;
+    h.c.getDoc = async () => snapshot(exists ? { status: 'verdict' } : null);
+    h.c.confirm = message => { prompt = message; assert.equal(writes.length, 0); return true; };
+    h.c.updateDoc = h.c.setDoc = async (...args) => { writes.push(args); };
+    h.get('trial-status').value = 'closed';
+    await h.get('trial-form').handlers.submit({ preventDefault() {} });
+    assert.match(prompt, /irreversible/i); assert.match(prompt, /cannot be reopened/i);
+    assert.match(prompt, /No further jury votes will be accepted/);
+    assert.match(prompt, /OK.*Cancel/); assert.equal(writes.length, 1);
+    assert.equal(writes[0][1].status, 'closed');
+  });
+  test(`cancelling closure leaves ${exists ? 'existing' : 'new'} trial unchanged and allows retry`, async () => {
+    const h = await adminTrials(); let writes = 0;
+    h.c.getDoc = async () => snapshot(exists ? { status: 'verdict' } : null);
+    h.c.updateDoc = h.c.setDoc = async () => { writes++; };
+    h.get('trial-status').value = 'closed'; h.c.confirm = () => false;
+    await h.get('trial-form').handlers.submit({ preventDefault() {} });
+    assert.equal(writes, 0); assert.match(h.get('status').textContent, /cancelled.*not changed/i);
+    assert.equal(h.get('trial-form').querySelector('button').disabled, false);
+    h.c.confirm = () => true;
+    await h.get('trial-form').handlers.submit({ preventDefault() {} }); assert.equal(writes, 1);
+  });
+}
+for (const stage of ['read', 'write']) {
+  test(`closure suppresses duplicate actions during pending ${stage}`, async () => {
+    const h = await adminTrials(), wait = deferred(); let reads = 0, writes = 0, confirms = 0;
+    h.c.getDoc = async () => { reads++; return stage === 'read' ? wait.promise : snapshot({ status: 'verdict' }); };
+    h.c.updateDoc = async () => { writes++; if (stage === 'write') await wait.promise; };
+    h.c.confirm = () => { confirms++; return true; }; h.get('trial-status').value = 'closed';
+    const submit = () => h.get('trial-form').handlers.submit({ preventDefault() {} });
+    const first = submit(); await tick(); await tick();
+    assert.equal(h.get('trial-form').querySelector('button').disabled, true);
+    await submit(); assert.equal(reads, 1);
+    if (stage === 'write') {
+      h.get('trial-select').value = 'case-b'; await h.get('trial-select').handlers.change();
+      h.get('trial-select').value = 'case-a'; await h.get('trial-select').handlers.change();
+      assert.equal(h.get('trial-form').querySelector('button').disabled, true);
+      h.get('trial-status').value = 'closed'; await submit(); assert.equal(reads, 1);
+    }
+    wait.resolve(snapshot({ status: 'verdict' })); await first;
+    assert.equal(writes, 1); assert.equal(confirms, 1);
+    assert.equal(h.get('trial-form').querySelector('button').disabled, false);
+  });
+}
+test('already closed trial title edits do not ask for closure again', async () => {
+  const h = await adminTrials(); let confirms = 0, writes = 0;
+  h.c.getDoc = async () => snapshot({ status: 'closed' });
+  h.c.confirm = () => { confirms++; return false; }; h.c.updateDoc = async () => { writes++; };
+  h.get('trial-status').value = 'closed';
+  await h.get('trial-form').handlers.submit({ preventDefault() {} });
+  assert.equal(confirms, 0); assert.equal(writes, 1);
+});
+test('failed closure releases its lock so the administrator can retry', async () => {
+  const h = await adminTrials(); let attempts = 0;
+  h.c.getDoc = async () => snapshot({ status: 'verdict' });
+  h.c.updateDoc = async () => { if (++attempts === 1) throw Error('Synthetic write failure'); };
+  h.get('trial-status').value = 'closed';
+  await h.get('trial-form').handlers.submit({ preventDefault() {} });
+  assert.match(h.get('status').textContent, /Unable to save.*Synthetic write failure/);
+  assert.equal(h.get('trial-form').querySelector('button').disabled, false);
+  await h.get('trial-form').handlers.submit({ preventDefault() {} }); assert.equal(attempts, 2);
 });

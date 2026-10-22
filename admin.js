@@ -1,6 +1,6 @@
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import {getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import {getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 const config={apiKey:'AIzaSyDQnvkuRP09s7ws-vZ9JC9Z8pJCkt5FYXI',authDomain:'modern-olympia.firebaseapp.com',projectId:'modern-olympia',storageBucket:'modern-olympia.firebasestorage.app',messagingSenderId:'69798855365',appId:'1:69798855365:web:9a5339ccbf5bd2cc5026ac'};
 const app=initializeApp(config),auth=getAuth(app),db=getFirestore(app);
 const $=id=>document.getElementById(id),status=(s)=>{$('status').textContent=s};
@@ -8,6 +8,8 @@ const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
 let authRevision=0, selectionRevision=0, selectedTrialId=null, adminAuthorized=false;
 let savingTrial=false;
+// Keep writes locked across trial reselection until the original operation settles.
+const pendingTrialSaves=new Set();
 const panels={roles:{request:0,ready:false},review:{request:0,ready:false},votes:{request:0,ready:false}};
 function currentAdmin(revision,uid){return revision===authRevision && auth.currentUser?.uid===uid}
 function selectionContext(){return {auth:authRevision,uid:auth.currentUser?.uid,selection:selectionRevision,trialId:selectedTrialId}}
@@ -52,7 +54,7 @@ function syncTrialEditor(){
 async function selectTrial(id){
  selectedTrialId=trials.some(t=>t.id===id)?id:null;
  $('trial-select').value=selectedTrialId||'';selectionRevision++;savingTrial=false;
- $('trial-form').querySelector('button').disabled=false;
+ $('trial-form').querySelector('button').disabled=pendingTrialSaves.has(selectedTrialId);
  $('activate-trial').disabled=!selectedTrialId||!adminAuthorized;
  syncTrialEditor();status('');
  return Promise.all([renderStudents(),loadReviewQueue(),refreshVotes()]);
@@ -100,9 +102,19 @@ $('trial-form').addEventListener('submit',async e=>{
  e.preventDefault();const context=selectionContext();if(!sameSelection(context)||savingTrial)return;
  const id=$('trial-id').value.trim(),title=$('trial-title').value.trim(),statusValue=$('trial-status').value;
  if(!/^[a-z0-9-]+$/.test(id)||!title)return status('Invalid trial ID or title');
- const btn=$('trial-form').querySelector('button');savingTrial=true;btn.disabled=true;
+ if(pendingTrialSaves.has(id))return;
+ const btn=$('trial-form').querySelector('button');pendingTrialSaves.add(id);savingTrial=true;btn.disabled=true;
  try{
-  const ref=doc(db,'trials',id),existing=await getDoc(ref);if(!sameSelection(context))return;
+  const ref=doc(db,'trials',id),existing=await getDocFromServer(ref);if(!sameSelection(context))return;
+  requireServerSnapshot(existing);
+  if(existing.exists()){
+   const phase=existing.data().status;
+   if(phase==='closed'&&statusValue!=='closed')throw Error('Closed trials cannot be reopened. Create a new trial for another voting round.');
+   if(phase==='verdict'&&statusValue==='trial')throw Error('Voting has opened; the argument phase cannot be reopened.');
+   if(!sameSelection(context))return;
+  }
+  if(statusValue==='closed'&&(!existing.exists()||existing.data().status!=='closed')&&!confirm(`Permanently close trial ${id}? This action is irreversible: the trial cannot be reopened. No further jury votes will be accepted after closure. Unsent ballots will not count. Check turnout and finish submission review first. Select OK to permanently close the trial, or Cancel to leave it unchanged.`)){if(sameSelection(context))status('Closure cancelled. Trial was not changed.');return}
+  if(!sameSelection(context))return;
   if(existing.exists())await updateDoc(ref,{title,status:statusValue});else await setDoc(ref,{title,status:statusValue});
   if(!currentAdmin(context.auth,context.uid)||!adminAuthorized)return;
   trials=trials.filter(t=>t.id!==id).concat({id,title,status:statusValue});
@@ -111,8 +123,8 @@ $('trial-form').addEventListener('submit',async e=>{
   const pending=renderTrials(id),savedContext=selectionContext();
   const results=await pending;
   if(sameSelection(savedContext))status(results.every(Boolean)?'Trial saved. All trial panels refreshed.':'Trial saved. Some panels could not be loaded; retry the affected panel.');
- }catch(err){if(sameSelection(context))status('Unable to save trial: '+err.code)}
- finally{if(sameSelection(context)){savingTrial=false;btn.disabled=false}}
+ }catch(err){if(sameSelection(context))status('Unable to save trial: '+(err.code||err.message))}
+ finally{pendingTrialSaves.delete(id);if(sameSelection(context))savingTrial=false;if(adminAuthorized&&!savingTrial)btn.disabled=pendingTrialSaves.has(selectedTrialId)}
 });
 async function renderStudents(){
  const {context,request,valid}=startPanel('roles');if(!valid)return false;
@@ -175,26 +187,68 @@ $('refresh-submissions').addEventListener('click',loadReviewQueue);
 async function refreshVotes(){
  const {context,request,valid}=startPanel('votes');if(!valid)return false;
  try{
-  const votes=await getDocs(collection(db,'trials',context.trialId,'votes'));
+  const votes=await getDocsFromServer(collection(db,'trials',context.trialId,'votes'));
   if(!currentPanel(context,'votes',request))return false;
+  requireServerSnapshot(votes);
   $('vote-count').textContent=`${votes.size} ballot(s) recorded for ${context.trialId}. Individual reasons are private to the administrator.`;
   finishPanel('votes',context,request,true);return true;
  }catch(err){if(currentPanel(context,'votes',request)){panelNode('votes').textContent=`Cannot read votes for ${context.trialId}: ${err.code||err.message}`;finishPanel('votes',context,request,false)}return false}
 }
 $('refresh-votes').addEventListener('click',refreshVotes);
+// Server reads fail closed instead of accepting an offline/local-pending view.
+function requireServerSnapshot(snapshot){
+ if(snapshot.metadata?.fromCache!==false||snapshot.metadata?.hasPendingWrites!==false)throw Error('A confirmed server snapshot is required. Reconnect and retry.');
+}
+function requireClosedUnpublished(trial){
+ requireServerSnapshot(trial);
+ if(!trial.exists()||trial.data().status!=='closed')throw Error('First close and save the trial. Publication requires permanent closure.');
+ if('verdictSummary' in trial.data()){
+  const summary=trial.data().verdictSummary;
+  if(!summary||!Number.isSafeInteger(summary.guilty)||!Number.isSafeInteger(summary.notGuilty)||summary.guilty<0||summary.notGuilty<0)throw Error('A malformed legacy summary field exists. Request an owner review; it cannot be replaced here.');
+  const error=Error(`Results already published: Guilty ${summary.guilty}, Not Guilty ${summary.notGuilty}. Existing totals cannot be replaced.`);
+  error.code='already-published';throw error;
+ }
+}
+function ballotSummary(snapshot){
+ requireServerSnapshot(snapshot);
+ if(!Array.isArray(snapshot.docs)||snapshot.size!==snapshot.docs.length)throw Error('The ballot collection is inconsistent. No totals were submitted.');
+ if(!snapshot.size)throw Error('No ballots were recorded. An empty jury cannot publish a verdict.');
+ let guilty=0,notGuilty=0;
+ for(const item of snapshot.docs){
+  const data=item.data();
+  if(!data||Object.keys(data).length!==3||!['guilty','not-guilty'].includes(data.choice)||
+   typeof data.reason!=='string'||data.reason.trim().length<15||data.reason.length>2000||
+   !(data.castAt instanceof Timestamp)||!Number.isFinite(data.castAt.toMillis()))throw Error(`Malformed ballot record ${item.id}. Review imported data before publishing.`);
+  if(data.choice==='guilty')guilty++;else notGuilty++;
+ }
+ return {guilty,notGuilty};
+}
 $('publish-verdict').addEventListener('click',async()=>{
  const context=selectionContext(),request=panels.votes.request,btn=$('publish-verdict');
  const current=()=>currentPanel(context,'votes',request)&&panels.votes.ready;
  if(!current()||btn.disabled)return;btn.disabled=true;$('refresh-votes').disabled=true;
+ status(`Checking closed trial and server ballots for ${context.trialId}…`);
  try{
-  const ref=doc(db,'trials',context.trialId),trial=await getDoc(ref);if(!current())return;
-  if(!trial.exists()||trial.data().status!=='closed')throw Error('First change trial status to Closed and save the trial.');
-  if(trial.data().verdictSummary)throw Error('Results already published.');
-  const ballots=await getDocs(collection(db,'trials',context.trialId,'votes'));if(!current())return;
-  const guilty=ballots.docs.filter(x=>x.data().choice==='guilty').length,notGuilty=ballots.docs.filter(x=>x.data().choice==='not-guilty').length;
-  if(!confirm(`Publish final result for ${context.trialId}? Guilty: ${guilty}, Not Guilty: ${notGuilty}.`)||!current())return;
-  await updateDoc(ref,{verdictSummary:{guilty,notGuilty}});if(!current())return;
-  status(`Final tally published for ${context.trialId}.`);await refreshVotes();
- }catch(err){if(current())status('Cannot publish verdict: '+(err.code||err.message))}
+  const ref=doc(db,'trials',context.trialId),trial=await getDocFromServer(ref);if(!current())return;
+  requireClosedUnpublished(trial);
+  const ballots=await getDocsFromServer(collection(db,'trials',context.trialId,'votes'));if(!current())return;
+  const summary=ballotSummary(ballots);
+  if(!confirm(`Publish final counts for ${context.trialId}? Guilty: ${summary.guilty}, Not Guilty: ${summary.notGuilty}. Recorded ballots: ${ballots.size}. Not all assigned jurors may have voted; no quorum or deadline policy is enforced. Counts cannot be changed.`)){if(current())status('Publication cancelled. No totals were submitted.');return}
+  if(!current())return;
+  // Rules make closed trials terminal and ballots immutable. The collection stays
+  // stable while this transaction checks for another administrator's publication.
+  // This does NOT prove the aggregate to rules; administrator-supplied totals remain trusted.
+  await runTransaction(db,async transaction=>{
+   if(!current())throw Error('Trial selection changed; publication cancelled.');
+   const latest=await transaction.get(ref);
+   if(!current())throw Error('Trial selection changed; publication cancelled.');
+   requireClosedUnpublished(latest);
+   transaction.update(ref,{verdictSummary:summary});
+  });
+  if(!current())return;
+  status(`Final tally published for ${context.trialId}. Guilty: ${summary.guilty}, Not Guilty: ${summary.notGuilty}. No quorum check was performed.`);
+  const refreshed=await refreshVotes();
+  if(sameSelection(context)&&!refreshed)status(`Final tally published for ${context.trialId}; ballot count refresh failed. The totals were saved.`);
+ }catch(err){if(current())status(err.code==='already-published'?`Previously published totals for ${context.trialId}: ${err.message}`:`Publication not confirmed for ${context.trialId}: ${err.code||err.message}. Reconnect and retry this check to verify saved results.`)}
  finally{if(current()){btn.disabled=false;$('refresh-votes').disabled=false}}
 });

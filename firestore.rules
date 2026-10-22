@@ -22,16 +22,23 @@ service cloud.firestore {
    allow delete: if false;
   }
   match /trials/{trialId} {
+   // Closure is terminal: a server-read ballot collection cannot grow after closing.
+   // Missing/legacy phase values can still be repaired to a supported phase.
+   function forwardPhase() { return !('status' in resource.data)
+     || (resource.data.status == 'closed' && request.resource.data.status == 'closed')
+     || (resource.data.status == 'verdict' && request.resource.data.status in ['verdict','closed'])
+     || !(resource.data.status in ['verdict','closed']); }
    allow read: if true;
    allow create: if admin() && request.resource.data.keys().hasOnly(['title','status']) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed'];
-   allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','status','verdictSummary']) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed']
+   allow update: if admin() && forwardPhase() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','status','verdictSummary']) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed']
      && (!('verdictSummary' in resource.data) || request.resource.data.status == 'closed')
      && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['verdictSummary']) ||
        (resource.data.status == 'closed' && request.resource.data.status == 'closed' &&
         !('verdictSummary' in resource.data) &&
         request.resource.data.verdictSummary.keys().hasOnly(['guilty','notGuilty']) &&
         request.resource.data.verdictSummary.guilty is int && request.resource.data.verdictSummary.guilty >= 0 &&
-        request.resource.data.verdictSummary.notGuilty is int && request.resource.data.verdictSummary.notGuilty >= 0));
+        request.resource.data.verdictSummary.notGuilty is int && request.resource.data.verdictSummary.notGuilty >= 0 &&
+        request.resource.data.verdictSummary.guilty + request.resource.data.verdictSummary.notGuilty > 0));
    allow delete: if false;
    match /votes/{uid} {
     function eligible() { return request.auth != null && request.auth.uid == uid
