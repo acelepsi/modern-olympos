@@ -1,0 +1,55 @@
+// Real SDK integration, strictly local demo emulators. Not part of network-free unit tests.
+const { test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const appSdk = require('firebase/app');
+const authSdk = require('firebase/auth');
+const storeSdk = require('firebase/firestore');
+const { seedLocal } = require('../scripts/seed-local.cjs');
+const { PROJECT } = require('../scripts/local-settings.cjs');
+const clients = new Map(), apps = [];
+let accounts;
+before(async () => {
+  accounts = await seedLocal();
+  const source = fs.readFileSync(path.join(__dirname, '..', 'firebase-client.js'), 'utf8').replace('export function', 'function');
+  for (const account of accounts) {
+    const context = { location: { hostname: '127.0.0.1', protocol: 'http:' }, __OLYMPOS_LOCAL_TEST__: true,
+      sdk: { ...appSdk, ...authSdk, ...storeSdk, initializeApp: config => appSdk.initializeApp(config, account.role) } };
+    vm.createContext(context); vm.runInContext(source, context);
+    const client = vm.runInContext('initializeFirebaseClient(sdk)', context); apps.push(client.app);
+    assert.equal(client.app.options.projectId, PROJECT);
+    await authSdk.signInWithEmailAndPassword(client.auth, account.email, account.password);
+    clients.set(account.role, client);
+  }
+});
+after(async () => { await Promise.all(apps.map(app => appSdk.deleteApp(app))); });
+const ref = (role, key) => storeSdk.doc(clients.get(role).db, key);
+const account = role => accounts.find(a => a.role === role);
+test('real synthetic administrator can list accounts and manage a trial under substituted local rules', async () => {
+  const rows = await storeSdk.getDocs(storeSdk.collection(clients.get('admin').db, 'students')); assert.equal(rows.size, 5);
+  await storeSdk.setDoc(ref('admin', 'trials/created-in-browser-test'), { title: 'Synthetic additional case', status: 'trial' });
+  await storeSdk.updateDoc(ref('admin', 'trials/created-in-browser-test'), { title: 'Updated synthetic case' });
+});
+test('real student login can read own draft but observer cannot', async () => {
+  const key = 'trials/local-preparation/submissions/private-prosecutor';
+  assert.equal((await storeSdk.getDoc(ref('prosecutor', key))).data().status, 'draft');
+  await assert.rejects(storeSdk.getDoc(ref('observer', key)), error => error.code === 'permission-denied');
+});
+test('real defender login sees the seeded pending submission and observer reads published content', async () => {
+  assert.equal((await storeSdk.getDoc(ref('defender', 'trials/local-preparation/submissions/private-defender'))).data().status, 'pending');
+  const published = await storeSdk.getDocs(storeSdk.query(storeSdk.collection(clients.get('observer').db, 'trials/local-preparation/submissions'), storeSdk.where('status', '==', 'published')));
+  assert.equal(published.size, 2);
+});
+test('real juror can vote once while observer cannot vote', async () => {
+  const ballot = { choice: 'guilty', reason: 'Synthetic browser integration reasoning.', castAt: storeSdk.serverTimestamp() };
+  const key = `trials/local-voting/votes/${account('juror').uid}`;
+  await storeSdk.setDoc(ref('juror', key), ballot);
+  await assert.rejects(storeSdk.setDoc(ref('juror', key), ballot), error => error.code === 'permission-denied');
+  await assert.rejects(storeSdk.setDoc(ref('observer', `trials/local-voting/votes/${account('observer').uid}`), ballot), error => error.code === 'permission-denied');
+});
+test('seeded empty trial rejects zero-vote publication and closed trial rejects reopening', async () => {
+  await assert.rejects(storeSdk.updateDoc(ref('admin', 'trials/local-empty'), { verdictSummary: { guilty: 0, notGuilty: 0 } }), error => error.code === 'permission-denied');
+  await assert.rejects(storeSdk.updateDoc(ref('admin', 'trials/local-closed'), { status: 'verdict' }), error => error.code === 'permission-denied');
+});

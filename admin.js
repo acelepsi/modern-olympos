@@ -1,8 +1,8 @@
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
-import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import {getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-const config={apiKey:'AIzaSyDQnvkuRP09s7ws-vZ9JC9Z8pJCkt5FYXI',authDomain:'modern-olympia.firebaseapp.com',projectId:'modern-olympia',storageBucket:'modern-olympia.firebasestorage.app',messagingSenderId:'69798855365',appId:'1:69798855365:web:9a5339ccbf5bd2cc5026ac'};
-const app=initializeApp(config),auth=getAuth(app),db=getFirestore(app);
+import {getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import {initializeFirebaseClient} from './firebase-client.js';
+const {app,auth,db}=initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator});
 const $=id=>document.getElementById(id),status=(s)=>{$('status').textContent=s};
 const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
