@@ -329,8 +329,16 @@ a { color: inherit; }
 }
 
 .dossier .mugshot {
-  width: 76px;
-  height: 76px;
+  width: 90px;
+  height: 90px;
+  min-width: 90px;
+  max-width: 90px;
+  min-height: 90px;
+  max-height: 90px;
+  flex: 0 0 90px;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
   border-radius: var(--radius);
   object-fit: cover;
   border: 1px solid var(--line-on-dark);
@@ -798,9 +806,21 @@ a { color: inherit; }
 @media(max-width:720px){.archive-columns{grid-template-columns:1fr}.archive-page{margin:1rem .5rem}.primary-nav{flex-wrap:wrap}.table-scroll{overflow-x:auto}}
 
 /* Optional portraits reserve their original space and fall back to Ω. */
-.trial-portrait{display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(145deg,#302920,#171512);color:var(--verdict-bright);font-family:'Cormorant SC',serif;font-size:2rem;border-radius:var(--radius);flex-shrink:0}
-.trial-portrait img{display:block;width:100%;height:100%;object-fit:cover}
-.archive-thumbnail{width:48px;height:48px;font-size:1.5rem}
-.archive-character-portrait{width:76px;height:76px}
+.trial-portrait{position:relative;box-sizing:border-box;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(145deg,#302920,#171512);color:var(--verdict-bright);font-family:'Cormorant SC',serif;font-size:2rem;border-radius:var(--radius);flex-shrink:0}
+/* More specific than placeholder/generic image rules: no intrinsic-size or
+   positioned image can escape its frame or influence the surrounding flex layout. */
+.dossier .mugshot > img,
+.archive-thumbnail.trial-portrait > img,
+.archive-character-portrait.trial-portrait > img{
+  position:absolute;inset:0;display:block;width:100%;height:100%;
+  min-width:0;min-height:0;max-width:100%;max-height:100%;
+  margin:0;padding:0;border:0;object-fit:cover;object-position:center;
+}
+.archive-thumbnail.trial-portrait{width:48px;height:48px;min-width:48px;max-width:48px;min-height:48px;max-height:48px;flex:0 0 48px;font-size:1.5rem}
+.archive-character-portrait.trial-portrait{width:76px;height:76px;min-width:76px;max-width:76px;min-height:76px;max-height:76px;flex:0 0 76px}
 #archive-list{list-style:none;padding:0}#archive-list a{display:flex;align-items:center;gap:12px;margin:.75rem 0}
 .archive-case-heading{display:flex;align-items:center;gap:20px}.archive-case-heading h2{min-width:0;overflow-wrap:anywhere}
+
+@media(max-width:600px){
+  .dossier .mugshot{width:72px;height:72px;min-width:72px;max-width:72px;min-height:72px;max-height:72px;flex-basis:72px}
+}
