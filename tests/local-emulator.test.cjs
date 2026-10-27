@@ -53,3 +53,15 @@ test('seeded empty trial rejects zero-vote publication and closed trial rejects 
   await assert.rejects(storeSdk.updateDoc(ref('admin', 'trials/local-empty'), { verdictSummary: { guilty: 0, notGuilty: 0 } }), error => error.code === 'permission-denied');
   await assert.rejects(storeSdk.updateDoc(ref('admin', 'trials/local-closed'), { status: 'verdict' }), error => error.code === 'permission-denied');
 });
+test('administrator can provision student access and pause participation without altering the teacher account',async()=>{
+ const teacher=clients.get('admin'),uid=teacher.auth.currentUser.uid;
+ const app=appSdk.initializeApp({projectId:PROJECT,apiKey:'demo-only-not-a-real-api-key'},'student-provision-integration');
+ const auth=authSdk.initializeAuth(app,{persistence:authSdk.inMemoryPersistence});authSdk.connectAuthEmulator(auth,'http://127.0.0.1:9099');
+ try{
+  const created=await authSdk.createUserWithEmailAndPassword(auth,'extra-student@students.demo-modern-olympos.invalid','SyntheticPassword123!');
+  await storeSdk.setDoc(storeSdk.doc(teacher.db,'students',created.user.uid),{displayName:'New Alias',active:true,accountType:'student'});
+  assert.equal(teacher.auth.currentUser.uid,uid);
+  await storeSdk.updateDoc(storeSdk.doc(teacher.db,'students',created.user.uid),{active:false});
+  assert.equal((await storeSdk.getDoc(storeSdk.doc(teacher.db,'students',created.user.uid))).data().active,false);
+ }finally{await appSdk.deleteApp(app)}
+});

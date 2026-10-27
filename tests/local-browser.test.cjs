@@ -19,7 +19,7 @@ function client(hostname = '127.0.0.1', local = true, protocol = 'http:', fail) 
   sdk.inMemoryPersistence = persistence;
   const context = { location: { hostname, protocol }, __OLYMPOS_LOCAL_TEST__: local, sdk };
   vm.createContext(context); vm.runInContext(source, context);
-  return { calls, persistence, run: () => vm.runInContext('initializeFirebaseClient(sdk)', context) };
+  return { calls, persistence, run: (options={}) => { context.options=options;return vm.runInContext('initializeFirebaseClient(sdk,options)', context); } };
 }
 test('local initializer selects demo identifiers and wires both emulators before returning', () => {
   const h = client(); const result = h.run();
@@ -58,7 +58,7 @@ for (const fail of ['connectAuthEmulator', 'connectFirestoreEmulator']) test(`${
 for (const file of ['app.js', 'admin.js']) test(`${file} uses the sole shared initialization path`, () => {
   const content = fs.readFileSync(path.join(root, file), 'utf8');
   assert.match(content, /import \{\s*initializeFirebaseClient\s*\} from ['"]\.\/firebase-client.js/);
-  assert.equal((content.match(/initializeFirebaseClient\(/g) || []).length, 1);
+  assert.equal((content.match(/initializeFirebaseClient\(/g) || []).length, file==='admin.js'?2:1);
   assert.doesNotMatch(content, /initializeApp\(/); assert.doesNotMatch(content, /modern-olympia\.firebaseapp\.com/);
   assert.match(content, /initializeFirebaseClient\([\s\S]*?connectAuthEmulator[\s\S]*?connectFirestoreEmulator/);
 });
@@ -137,4 +137,10 @@ test('local server preserves local mode on navigation, restricts Firebase networ
     const module = await request(port, '/firebase-client.js'); assert.equal(module.status, 200); assert.match(module.headers['content-type'], /javascript/);
     const head = await request(port, '/', undefined, 'HEAD'); assert.equal(head.status, 200); assert.equal(head.body, '');
   } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('secondary provisioning uses memory-only Auth even on hosted production pages',()=>{
+ const h=client('acelepsi.github.io',false,'https:');h.run({name:'secondary',isolatedAuth:true});
+ assert.equal(h.calls[0][2],'secondary');assert.equal(h.calls[1][0],'initializeAuth');assert.equal(h.calls[1][2].persistence,h.persistence);
+ assert.ok(!h.calls.some(call=>call[0]==='getAuth'));
 });

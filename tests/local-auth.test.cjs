@@ -31,3 +31,15 @@ test('all five synthetic accounts sign in through the shared initializer with re
     } finally { await appSdk.deleteApp(client.app); }
   }
 });
+test('isolated student creation leaves the real emulator teacher session signed in',async()=>{
+ const source=fs.readFileSync(path.join(__dirname,'..','firebase-client.js'),'utf8').replace('export function','function');
+ const context={location:{hostname:'127.0.0.1',protocol:'http:'},__OLYMPOS_LOCAL_TEST__:true,sdk:{...appSdk,...authSdk,getFirestore:()=>({}),connectFirestoreEmulator(){}}};
+ vm.createContext(context);vm.runInContext(source,context);
+ const primary=vm.runInContext("initializeFirebaseClient(sdk,{name:'teacher-check'})",context);
+ const secondary=vm.runInContext("initializeFirebaseClient(sdk,{name:'new-student-check',isolatedAuth:true})",context);
+ try{
+  const admin=ACCOUNTS.find(account=>account.role==='admin');await authSdk.signInWithEmailAndPassword(primary.auth,admin.email,admin.password);const uid=primary.auth.currentUser.uid;
+  const created=await authSdk.createUserWithEmailAndPassword(secondary.auth,'created-student@students.demo-modern-olympos.invalid','SyntheticPassword123!');
+  assert.equal(primary.auth.currentUser.uid,uid);assert.notEqual(created.user.uid,uid);await authSdk.deleteUser(created.user);assert.equal(primary.auth.currentUser.uid,uid);
+ }finally{await appSdk.deleteApp(secondary.app);await appSdk.deleteApp(primary.app)}
+});

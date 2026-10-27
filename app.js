@@ -178,7 +178,7 @@ el.loginForm.addEventListener("submit", async (e) => {
 
 el.logoutBtn.addEventListener("click", async () => {
   try { await signOut(auth); }
-  catch (err) { console.error("Sign-out failed", err); }
+  catch (err) { document.getElementById("account-status").textContent="Unable to sign out. Check your connection and try again."; }
 });
 
 function stopListeners() {
@@ -199,12 +199,13 @@ onAuthStateChanged(auth, (user) => {
   currentProfile = null;
   currentAssignment = null;
   applySession(null);
+  document.getElementById("account-status").textContent=user?"Loading your account…":"";
   if (!user) return;
   unsubscribeProfile = onSnapshot(doc(db, "students", user.uid), snap => {
     if (revision !== authRevision) return;
     currentProfile = snap.exists() ? snap.data() : null;
     renderIdentity();
-  }, err => { if (revision !== authRevision) return; console.error("Student profile access:", err); applySession(null); });
+  }, err => { if (revision !== authRevision) return; currentProfile=null;clearPrivateContext();applySession(null);document.getElementById("account-status").textContent="Unable to read your student access. Try signing out and signing in again, or ask your teacher."; });
   // The active trial is resolved independently below. It may change while signed in.
   subscribeAssignmentForActiveTrial(user, revision);
 
@@ -229,13 +230,14 @@ function subscribeAssignmentForActiveTrial(user, revision) {
       renderIdentity();
       refreshMyVote();
     },
-    err => { if (revision !== authRevision || !isCurrentContext(context)) return; console.error("Trial assignment access:", err); currentAssignment = null; renderIdentity(); }
+    err => { if (revision !== authRevision || !isCurrentContext(context)) return; currentAssignment = null; renderIdentity();document.getElementById("account-status").textContent="Unable to load your role. Ask the teacher or reload to retry."; }
   );
 }
 
 // A public pointer selects the current case for every visitor, even before login.
 unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap => {
   const nextId = snap.exists() ? snap.data().trialId : null;
+  document.getElementById("court-status").textContent=nextId?"":"No active trial yet. Your teacher will activate a case.";
   if (nextId === activeTrialId) return;
   clearPrivateContext();
   const revision = ++trialRevision;
@@ -254,7 +256,8 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
       if (revision !== trialRevision) return;
       if (!trialSnap.exists()) {
         if (title) title.textContent = "Trial unavailable";
-        setTrialStatus("closed");
+        currentTrial.verdictSummary=null;setTrialStatus("closed");
+        document.getElementById("court-status").textContent="The selected trial is unavailable. Please ask your teacher.";
         return;
       }
       const data = trialSnap.data();
@@ -264,17 +267,18 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
       if (charge) charge.textContent = data.charge || "";
       setTrialStatus(data.status || "closed");
       refreshMyVote();
-    }, err => { if (revision === trialRevision) console.error("Active trial access:", err); });
+    }, err => { if (revision !== trialRevision)return;clearPrivateContext();currentTrial.verdictSummary=null;setTrialStatus("closed");document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
   }
   subscribeAssignmentForActiveTrial(auth.currentUser, authRevision);
-}, err => console.error("Active trial settings access:", err));
+}, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();activeTrialId=null;currentTrial.verdictSummary=null;setTrialStatus("closed");refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
 
 function renderIdentity() {
+  document.getElementById("account-status").textContent=!auth.currentUser?"":!currentProfile?"Student access is not available. Ask your teacher or sign out to switch accounts.":currentProfile.active!==true?"Participation is paused. You may read public content; ask your teacher to resume access.":"";
   if (!currentProfile || currentProfile.active !== true) {
     applySession(null);
     return;
   }
-  const role = currentAssignment?.role || "unassigned";
+  const role = currentProfile.accountType === "student" ? (currentAssignment?.role || "unassigned") : "unassigned";
   applySession({ name: currentProfile.displayName || "Student", role });
 }
 
@@ -291,8 +295,10 @@ function applySession(session) {
     el.sessionRoleTag.textContent = session.role;
     el.sessionRoleTag.dataset.role = session.role;
   } else {
-    el.loginBtn.hidden = false;
-    el.sessionChip.hidden = true;
+    el.loginBtn.hidden = !!auth.currentUser;
+    el.sessionChip.hidden = !auth.currentUser;
+    el.sessionName.textContent=auth.currentUser?(currentProfile?.displayName||"Signed-in account"):"";
+    el.sessionRoleTag.textContent=auth.currentUser?"Access unavailable":"";
   }
 
   applyComposerVisibility(session);
@@ -302,7 +308,7 @@ function applySession(session) {
 // Static text only — the header Login button is the single login
 // entry point, so these notices never contain a control of their own.
 const PROSECUTION_LOCKED_TEXT = "Only Prosecutors may post here. Log in from the header to participate.";
-const DEFENSE_LOCKED_TEXT = "Only Lawyers may post here. Log in from the header to participate.";
+const DEFENSE_LOCKED_TEXT = "Only defense representatives may post here. Log in from the header to participate.";
 
 function applyComposerVisibility(session) {
   const role = currentTrial.status === "trial" ? (session?.role ?? null) : null;
@@ -323,10 +329,8 @@ function applyComposerVisibility(session) {
 // -----------------------------------------------------------------
 // currentTrial: local cache of the active trial's phase, so the
 // jury-vote gating below has something to check against. This is a
-// stand-in until the live `trials/{id}` onSnapshot listener (see
-// TODO block at the bottom of this file) replaces it — at that
-// point, setTrialStatus() is the function the listener should call
-// on every update instead of this hardcoded default.
+// cache updated by the live trials/{id} listener. Unknown or unavailable
+// trials stay closed until their phase has been loaded.
 // -----------------------------------------------------------------
 let currentTrial = { status: "trial" };
 
@@ -337,8 +341,6 @@ function setTrialStatus(status) {
   renderPublicVerdict();
   const pill = document.getElementById("status-pill");
   if (pill) { pill.textContent = status; pill.dataset.status = status; }
-  // TODO: also drive #status-pill text/data-status, composer
-  // enable/disable by phase, and the results tally once 'closed'.
 }
 
 let lastKnownSession = null;
@@ -433,21 +435,9 @@ el.juryVoteForm.addEventListener('submit', async (e) => {
 });
 
 // -----------------------------------------------------------------
-// TODO (next step, same as before):
-//   - onSnapshot(doc(db, "trials", currentTrialId)) to populate the
-//     dossier bar + status pill, and call setTrialStatus(newStatus)
-//     on every update so jury-vote gating (and eventually composer
-//     phase-gating, results tally) react live instead of using the
-//     hardcoded currentTrial default above.
-//   - onSnapshot(query(collection(db, "arguments"), where(...)))
-//     for each column's feed — public, so no auth needed to read.
-//   - onSnapshot(query(collection(db, "verdicts"), where(...))) to
-//     compute and render the live/public results tally.
-//   - Wire composer <form> submits to addDoc(...).
-// -----------------------------------------------------------------
-
 // v5: case-scoped, moderated submissions.
-let stopPublished = null, stopMine = null;
+let stopPublished = null, stopMine = null, submissionRevision = 0;
+const pendingSubmissionSaves=new Set();
 let mySubmissions = [];
 function submissionCollection() { return collection(db, 'trials', activeTrialId, 'submissions'); }
 function renderPost(container, data) {
@@ -481,23 +471,24 @@ function renderMine(){
  }
 }
 function refreshSubmissionListeners(){
+ const request=++submissionRevision;
  if(stopPublished)stopPublished();if(stopMine)stopMine();stopPublished=stopMine=null;mySubmissions=[];renderMine();
  for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').replaceChildren();
  if(!activeTrialId)return;
  const trialAtSubscribe=activeTrialId;
  stopPublished=onSnapshot(query(submissionCollection(),where('status','==','published')),snap=>{
-  if(trialAtSubscribe!==activeTrialId)return;
+  if(request!==submissionRevision||trialAtSubscribe!==activeTrialId)return;
   const feeds={prosecution:document.getElementById('prosecution-feed'),defense:document.getElementById('defense-feed')};
   for(const feed of Object.values(feeds))feed.replaceChildren();
   for(const item of snap.docs){const post=item.data();if(feeds[post.section])renderPost(feeds[post.section],post)}
   for(const feed of Object.values(feeds))if(!feed.children.length)feed.textContent='No approved submissions yet.';
- },err=>console.error('Published submissions:',err));
+ },err=>{if(request!==submissionRevision||trialAtSubscribe!==activeTrialId)return;for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').textContent='Unable to load published arguments. Reload to retry.';});
  const user=auth.currentUser;
  if(user&&currentProfile?.active===true&&currentProfile?.accountType==='student'){
   stopMine=onSnapshot(query(submissionCollection(),where('authorUid','==',user.uid)),snap=>{
-   if(trialAtSubscribe!==activeTrialId||auth.currentUser?.uid!==user.uid)return;
+   if(request!==submissionRevision||trialAtSubscribe!==activeTrialId||auth.currentUser?.uid!==user.uid)return;
    mySubmissions=snap.docs.map(x=>({id:x.id,...x.data()}));renderMine();
-  },err=>console.error('My submissions:',err));
+  },err=>{if(request!==submissionRevision||trialAtSubscribe!==activeTrialId||auth.currentUser?.uid!==user.uid)return;mySubmissions=[];renderMine();document.getElementById('my-submissions-list').textContent='Unable to load your submissions. Reload to retry.';});
  }
 }
 for(const side of ['prosecution','defense']){
@@ -505,11 +496,13 @@ for(const side of ['prosecution','defense']){
  const feedback=document.getElementById(side+'-feedback');
  const save=async status=>{
   const user=auth.currentUser;
-  const context=captureContext();
+  const context=captureContext(),saveKey=context.generation+':'+side;
+  if(pendingSubmissionSaves.has(saveKey))return;
   if(!user||!activeTrialId||currentTrial.status!=='trial'||currentProfile?.active!==true||currentProfile?.accountType!=='student'||currentAssignment?.role!==(side==='prosecution'?'prosecutor':'defender')){feedback.textContent='You cannot submit in this trial or role.';return}
   const body=form.querySelector('textarea').value.trim(),link=form.querySelector('input[type=url]').value.trim();
   if(!body||body.length>5000){feedback.textContent='Please enter between 1 and 5000 characters.';return}
   if(link&&(!/^https?:\/\//i.test(link)||link.length>1000)){feedback.textContent='Evidence must be an http(s) URL under 1000 characters.';return}
+  pendingSubmissionSaves.add(saveKey);
   const buttons=[...form.querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);
   try{
    const editId=form.dataset.editId;
@@ -520,9 +513,9 @@ for(const side of ['prosecution','defense']){
    }
    if(!isCurrentContext(context))return;
    form.reset();delete form.dataset.editId;feedback.textContent=status==='draft'?'Draft saved privately.':'Sent to administrator for approval.';
-  }catch(err){if(!isCurrentContext(context))return;feedback.textContent='Save failed: '+(err.code||err.message);console.error(err)}finally{if(isCurrentContext(context))buttons.forEach(x=>x.disabled=false)}
+  }catch(err){if(!isCurrentContext(context))return;feedback.textContent='Save failed: '+(err.code||err.message);console.error(err)}finally{pendingSubmissionSaves.delete(saveKey);if(isCurrentContext(context))buttons.forEach(x=>x.disabled=false)}
  };
- form.addEventListener('submit',e=>{e.preventDefault();save('pending')});
+ form.addEventListener('submit',e=>{e.preventDefault();return save('pending')});
  form.querySelector('[data-action=draft]').addEventListener('click',()=>save('draft'));
 }
 // Reconnect when the active case, signed-in user or profile changes.
