@@ -2,6 +2,7 @@ import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase
 import {getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import {getFirestore,connectFirestoreEmulator,collection,query,where,getDocsFromServer} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import {initializeFirebaseClient} from './firebase-client.js';
+import {renderPortrait} from './portraits.js';
 const {db}=initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator});
 const $=id=>document.getElementById(id);
 let archiveRequest=0;
@@ -22,13 +23,13 @@ async function loadArchive(){
  try{
   const snapshot=await getDocsFromServer(query(collection(db,'trials'),where('status','==','closed')));if(!current())return;
   const trials=snapshot.docs.map(item=>({id:item.id,...item.data()})).filter(item=>item.status==='closed').sort((a,b)=>String(a.title||a.id).localeCompare(String(b.title||b.id)));
-  for(const trial of trials){const item=node('li'),link=node('a',trial.title||trial.id);link.href='archive.html?trial='+encodeURIComponent(trial.id);item.append(link);$('archive-list').append(item)}
+  for(const trial of trials){const item=node('li'),link=node('a'),portrait=node('span');portrait.className='trial-portrait archive-thumbnail';renderPortrait(portrait,trial.portraitUrl,`Portrait for ${trial.title||trial.id}`);link.append(portrait,node('span',trial.title||trial.id));link.href='archive.html?trial='+encodeURIComponent(trial.id);item.append(link);$('archive-list').append(item)}
   if(!trials.length){$('archive-status').textContent='No completed trials yet. Visit the active court to follow the current case.';return}
   const selected=new URLSearchParams(location.search).get('trial');
   if(!selected){$('archive-status').textContent=`${trials.length} completed trial(s). Choose a case to read its published arguments and final tally.`;return}
   const trial=trials.find(item=>item.id===selected);
   if(!trial){$('archive-status').textContent='That completed trial is unavailable. Choose one of the listed cases.';return}
-  $('archive-title').textContent=trial.title||trial.id;$('archive-info').textContent=typeof trial.charge==='string'?trial.charge:'';
+  renderPortrait($('archive-portrait'),trial.portraitUrl,`Portrait for ${trial.title||trial.id}`);$('archive-title').textContent=trial.title||trial.id;$('archive-info').textContent=typeof trial.charge==='string'?trial.charge:'';
   $('archive-status').textContent='Loading published arguments…';
   const submissions=await getDocsFromServer(query(collection(db,'trials',trial.id,'submissions'),where('status','==','published')));if(!current())return;
   const feeds={prosecution:$('archive-prosecution'),defense:$('archive-defense')};for(const feed of Object.values(feeds))feed.replaceChildren();

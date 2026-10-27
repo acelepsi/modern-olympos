@@ -23,7 +23,7 @@ test('lost profile acknowledgement is confirmed from the server without deleting
 test('unconfirmed partial creation gives a recovery message without reporting success',async()=>{
  await assert.rejects(accounts.provisionStudent(input,api({save:async()=>{throw Error('Offline')},read:async()=>{throw Error('Offline')}})),/could not be confirmed.*UID new/);
 });
-function element(){return {textContent:'',children:[],hidden:false,disabled:false,attributes:{},handlers:{},append(...items){this.children.push(...items)},replaceChildren(){this.children=[];this.textContent=''},setAttribute(k,v){this.attributes[k]=v},addEventListener(k,v){this.handlers[k]=v}}}
+function element(){return {textContent:'',children:[],hidden:false,disabled:false,attributes:{},handlers:{},append(...items){this.children.push(...items)},replaceChildren(...items){this.children=items;this.textContent=''},setAttribute(k,v){this.attributes[k]=v},addEventListener(k,v){this.handlers[k]=v}}}
 function archive(search='?trial=closed-case'){
  const nodes=new Map(),calls=[];const get=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)};
  const context={document:{getElementById:get,createElement:element},initializeFirebaseClient:()=>({db:{}}),initializeApp(){},getAuth(){},initializeAuth(){},inMemoryPersistence:{},connectAuthEmulator(){},getFirestore(){},connectFirestoreEmulator(){},URL,URLSearchParams,location:{search},
@@ -34,7 +34,7 @@ function archive(search='?trial=closed-case'){
  {data:()=>({status:'draft',section:'prosecution',text:'PRIVATE DRAFT'})},
  {data:()=>({status:'pending',section:'defense',text:'PRIVATE PENDING'})}
  ]}},console};
- vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'archive.js'),'utf8').replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\n/gm,''),context);
+ vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'archive.js'),'utf8').replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\n/gm,''),context);
  return {context,get,calls,run:code=>vm.runInContext(code,context)};
 }
 test('archive renders closed trials, published arguments and valid tally without querying private votes or profiles',async()=>{
@@ -82,4 +82,12 @@ test('an existing Auth code is never overwritten or deleted when creation is rej
  let saved=false,removed=false;
  await assert.rejects(accounts.provisionStudent(input,api({create:async()=>{throw Error('Code already exists')},save:async()=>{saved=true},remove:async()=>{removed=true}})),/already exists/);
  assert.equal(saved,false);assert.equal(removed,false);
+});
+test('archive renders optional portraits in thumbnails/detail and retains legacy Ω',async()=>{
+ const h=archive();await h.run('loadArchive()');assert.equal(h.get('archive-portrait').textContent,'Ω');
+ h.context.getDocsFromServer=async query=>query[0].length===1?{docs:[{id:'closed-case',data:()=>({title:'Athena',status:'closed',portraitUrl:'https://images.example/athena.jpg'})}]}:{docs:[]};
+ await h.run('loadArchive()');
+ assert.equal(h.get('archive-portrait').children[0].src,'https://images.example/athena.jpg');
+ const thumbnail=h.get('archive-list').children[0].children[0].children[0];assert.equal(thumbnail.children[0].src,'https://images.example/athena.jpg');
+ thumbnail.children[0].onerror();assert.equal(thumbnail.textContent,'Ω');assert.equal(h.get('archive-detail').hidden,false);
 });

@@ -3,6 +3,7 @@ import {getAuth,createUserWithEmailAndPassword,deleteUser,initializeAuth,inMemor
 import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import {initializeFirebaseClient} from './firebase-client.js';
 import {provisionStudent} from './student-accounts.js';
+import {portraitUrl} from './portraits.js';
 const {app,auth,db}=initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator});
 const $=id=>document.getElementById(id),status=(s)=>{$('status').textContent=s};
 const roles=['unassigned','prosecutor','defender','juror'];
@@ -50,7 +51,7 @@ function renderTrialOptions(preferred){
 function renderTrials(preferred=selectedTrialId){renderTrialOptions(preferred);return selectTrial($('trial-select').value)}
 function syncTrialEditor(){
  const trial=trials.find(t=>t.id===selectedTrialId);
- $('trial-id').readOnly=!!trial;$('trial-id').value=trial?.id||'';$('trial-title').value=trial?.title||'';$('trial-status').value=trial?.status||'trial';
+ $('trial-id').readOnly=!!trial;$('trial-id').value=trial?.id||'';$('trial-title').value=trial?.title||'';$('trial-status').value=trial?.status||'trial';$('trial-portrait-url').value=trial?.portraitUrl||'';
 }
 // All selection changes, including successful saves, refresh the same dependent panels.
 async function selectTrial(id){
@@ -86,7 +87,7 @@ onAuthStateChanged(auth,async user=>{
  for(const id of ['student-code','student-name','student-password'])$(id).value='';
  for(const id of ['student-rows','trial-select'])$(id).replaceChildren();
  $('trial-select').value='';$('identity').textContent='';
- for(const id of ['trial-id','trial-title','password'])$(id).value='';
+ for(const id of ['trial-id','trial-title','trial-portrait-url','password'])$(id).value='';
  for(const id of ['activate-trial','refresh-roles','refresh-submissions','refresh-votes','publish-verdict'])$(id).disabled=true;
  $('trial-form').querySelector('button').disabled=false;
  status('');$('dashboard').hidden=true;$('login-panel').hidden=!!user;$('switch-account').hidden=!user;
@@ -107,6 +108,7 @@ $('trial-form').addEventListener('submit',async e=>{
  e.preventDefault();const context=selectionContext();if(!sameSelection(context)||savingTrial)return;
  const id=$('trial-id').value.trim(),title=$('trial-title').value.trim(),statusValue=$('trial-status').value;
  if(!/^[a-z0-9-]{1,80}$/.test(id)||!title)return status('Invalid trial ID or title');
+ let portrait;try{portrait=portraitUrl($('trial-portrait-url').value)}catch(error){return status(error.message)}
  if(pendingTrialSaves.has(id))return;
  const btn=$('trial-form').querySelector('button');pendingTrialSaves.add(id);savingTrial=true;btn.disabled=true;
  try{
@@ -120,9 +122,11 @@ $('trial-form').addEventListener('submit',async e=>{
   }
   if(statusValue==='closed'&&(!existing.exists()||existing.data().status!=='closed')&&!confirm(`Permanently close trial ${id}? This action is irreversible: the trial cannot be reopened. No further jury votes will be accepted after closure. Unsent ballots will not count. Check turnout and finish submission review first. Select OK to permanently close the trial, or Cancel to leave it unchanged.`)){if(sameSelection(context))status('Closure cancelled. Trial was not changed.');return}
   if(!sameSelection(context))return;
-  if(existing.exists())await updateDoc(ref,{title,status:statusValue});else await setDoc(ref,{title,status:statusValue});
+  const changes={title,status:statusValue};
+  if(portrait||(existing.exists()&&'portraitUrl' in existing.data()))changes.portraitUrl=portrait;
+  if(existing.exists())await updateDoc(ref,changes);else await setDoc(ref,changes);
   if(!currentAdmin(context.auth,context.uid)||!adminAuthorized)return;
-  trials=trials.filter(t=>t.id!==id).concat({id,title,status:statusValue});
+  trials=trials.filter(t=>t.id!==id).concat({...(existing.exists()?existing.data():{}),id,...changes});
   // A completed write may update the option list, but must not steal a newer selection.
   if(!sameSelection(context)){renderTrialOptions(selectedTrialId);$('trial-select').value=selectedTrialId||'';return}
   const pending=renderTrials(id),savedContext=selectionContext();

@@ -38,9 +38,13 @@ service cloud.firestore {
      || (resource.data.status == 'closed' && request.resource.data.status == 'closed')
      || (resource.data.status == 'verdict' && request.resource.data.status in ['verdict','closed'])
      || !(resource.data.status in ['verdict','closed']); }
+   function validPortrait() { return !('portraitUrl' in request.resource.data) ||
+     (request.resource.data.portraitUrl is string && request.resource.data.portraitUrl.size() <= 2000 &&
+      (request.resource.data.portraitUrl == '' || request.resource.data.portraitUrl.matches('^https://([A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:]+\\])(:[0-9]{1,5})?([/?#][^\\s]*)?$'))); }
    allow read: if true;
-   allow create: if admin() && request.resource.data.keys().hasOnly(['title','status']) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed'];
-   allow update: if admin() && forwardPhase() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','status','verdictSummary']) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed']
+   allow create: if admin() && request.resource.data.keys().hasOnly(['title','status','portraitUrl']) && validPortrait() && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed'];
+   allow update: if admin() && forwardPhase() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','status','verdictSummary','portraitUrl'])
+     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['portraitUrl']) || validPortrait()) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed']
      && (!('verdictSummary' in resource.data) || request.resource.data.status == 'closed')
      && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['verdictSummary']) ||
        (resource.data.status == 'closed' && request.resource.data.status == 'closed' &&

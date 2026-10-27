@@ -15,7 +15,7 @@ function element(textContent = '') {
     classList: { toggle(k, on) { on ? classes.add(k) : classes.delete(k); }, remove(k) { classes.delete(k); }, contains(k) { return classes.has(k); } },
     setAttribute(k, v) { this.attributes[k] = v; },
     addEventListener(k, fn) { this.handlers[k] = fn; },
-    replaceChildren() { this.children = []; this.textContent = ''; },
+    replaceChildren(...items) { this.children = items; this.textContent = ''; },
     append(...children) { this.children.push(...children); },
     querySelector(selector) { if (!fields.has(selector)) fields.set(selector, element()); return fields.get(selector); },
     querySelectorAll() { return []; }, focus() {}, scrollIntoView() {},
@@ -49,6 +49,7 @@ function harness(file) {
     setTimeout() {}, queueMicrotask() {}, console, URL,
   };
   vm.createContext(c);
+  vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),c);
   const accountModule=fs.readFileSync(path.join(root,'student-accounts.js'),'utf8').replace(/^export /gm,'');
   vm.runInContext(accountModule,c);
   const source = fs.readFileSync(path.join(root, file), 'utf8').replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];/gm, '');
@@ -845,4 +846,25 @@ test('new trial action clears dependent panels and saves a separate case',async(
 });
 test('active teacher with a legacy juror assignment never sees student voting controls',async()=>{
  const h=harness('app.js');h.run("activeTrialId='case-a';currentTrial.status='verdict';currentProfile={active:true,accountType:'teacher',displayName:'Teacher'};currentAssignment={role:'juror'};checkingVote=false;renderIdentity()");assert.equal(h.get('jury-vote-form').hidden,true);
+});
+
+test('administrator saves an HTTPS portrait and restores it in the editor',async()=>{
+ const h=await adminTrials(),writes=[];h.get('trial-portrait-url').value='https://images.example/athena.jpg';h.c.getDoc=async()=>snapshot({status:'trial'});h.c.updateDoc=async(...args)=>writes.push(args);
+ await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal(writes[0][1].portraitUrl,'https://images.example/athena.jpg');assert.equal(h.get('trial-portrait-url').value,'https://images.example/athena.jpg');
+});
+test('invalid portrait prevents trial reads/writes and never creates an admin preview image',async()=>{
+ const h=await adminTrials();let reads=0,writes=0,images=0;h.c.getDoc=async()=>{reads++;return snapshot({status:'trial'})};h.c.updateDoc=async()=>{writes++};const create=h.c.document.createElement;h.c.document.createElement=tag=>{if(tag==='img')images++;return create(tag)};
+ h.get('trial-portrait-url').value='http://images.example/athena.jpg';await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal(reads,0);assert.equal(writes,0);assert.equal(images,0);assert.match(h.get('status').textContent,/HTTPS/);
+});
+test('legacy trial saves omit the blank optional portrait field',async()=>{
+ const h=await adminTrials(),writes=[];h.c.getDoc=async()=>snapshot({status:'trial'});h.c.updateDoc=async(...args)=>writes.push(args);await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal('portraitUrl' in writes[0][1],false);
+});
+test('administrator can clear an existing portrait without migration',async()=>{
+ const h=await adminTrials(),writes=[];h.c.getDoc=async()=>snapshot({status:'trial',portraitUrl:'https://images.example/old.jpg'});h.c.updateDoc=async(...args)=>writes.push(args);h.get('trial-portrait-url').value='';await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal(writes[0][1].portraitUrl,'');
+});
+test('new trial and sign-out clear the portrait editor context',async()=>{
+ const h=await adminTrials();h.get('trial-portrait-url').value='https://images.example/unsaved.jpg';await h.get('new-trial').handlers.click();assert.equal(h.get('trial-portrait-url').value,'');h.get('trial-portrait-url').value='https://images.example/unsaved.jpg';await h.authCallbacks[0](null);assert.equal(h.get('trial-portrait-url').value,'');
+});
+test('court renders trial portrait and restores Ω while another trial loads',()=>{
+ const h=harness('app.js'),pointer=h.snapshots.find(sub=>sub.ref.join('/')==='settings/currentTrial');pointer.next({exists:()=>true,data:()=>({trialId:'case-a'})});const trial=h.snapshots.find(sub=>sub.ref.join('/')==='trials/case-a');trial.next({exists:()=>true,data:()=>({title:'Athena',status:'trial',portraitUrl:'https://images.example/athena.jpg'})});assert.equal(h.get('mugshot').children[0].src,'https://images.example/athena.jpg');pointer.next({exists:()=>true,data:()=>({trialId:'case-b'})});assert.equal(h.get('mugshot').textContent,'Ω');assert.equal(h.get('mugshot').children.length,0);
 });
