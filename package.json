@@ -7,9 +7,12 @@
     "node": ">=24.12.0"
   },
   "scripts": {
-    "test": "node tests/regressions.cjs",
+    "test": "node tests/regressions.cjs && node --test tests/local-browser.test.cjs",
     "test:security": "firebase emulators:exec --config firebase.emulators.json --project demo-modern-olympos --only firestore \"node --test --test-concurrency=1 tests/firestore.security.test.cjs\"",
-    "test:all": "npm test && npm run test:security"
+    "test:all": "npm test && npm run test:local:auth && npm run test:security && npm run test:local:integration",
+    "local:browser": "node scripts/start-local.cjs",
+    "test:local:integration": "firebase emulators:exec --config firebase.browser.json --project demo-modern-olympos-browser --only auth,firestore \"node --test --test-concurrency=1 tests/local-emulator.test.cjs\"",
+    "test:local:auth": "firebase emulators:exec --config firebase.browser.json --project demo-modern-olympos-browser --only auth \"node --test tests/local-auth.test.cjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "6.0.0",

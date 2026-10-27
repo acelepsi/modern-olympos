@@ -15,32 +15,24 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getAuth,
+  getAuth, initializeAuth, inMemoryPersistence, connectAuthEmulator,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
-  getFirestore,
+  getFirestore, connectFirestoreEmulator,
   doc,
   getDoc,
   onSnapshot,
   collection, addDoc, updateDoc, setDoc, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-// Firebase web configuration (public client identifiers; access controlled by rules).
-const firebaseConfig = {
-  apiKey: "AIzaSyDQnvkuRP09s7ws-vZ9JC9Z8pJCkt5FYXI",
-  authDomain: "modern-olympia.firebaseapp.com",
-  projectId: "modern-olympia",
-  storageBucket: "modern-olympia.firebasestorage.app",
-  messagingSenderId: "69798855365",
-  appId: "1:69798855365:web:9a5339ccbf5bd2cc5026ac"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+import { initializeFirebaseClient } from './firebase-client.js';
+const { app, auth, db, accountDomain } = initializeFirebaseClient({
+  initializeApp, getAuth, initializeAuth, inMemoryPersistence, connectAuthEmulator,
+  getFirestore, connectFirestoreEmulator
+});
 
 // -----------------------------------------------------------------
 // DOM references
@@ -104,7 +96,7 @@ function setLoginStatus(message, state) {
 // Permanent student credentials. These are *virtual* Firebase Auth emails,
 // not actual email inboxes. Accounts are provisioned by a teacher in Firebase
 // Authentication. Passwords never enter Firestore.
-const ACCOUNT_DOMAIN = "students.modern-olympia.firebaseapp.com";
+const ACCOUNT_DOMAIN = accountDomain;
 let activeTrialId = null;
 let unsubscribeActiveTrial = null;
 let unsubscribeTrial = null;

@@ -62,8 +62,9 @@ The CLI normally shuts its emulators down automatically after the tests finish.
   reads, queries and writes use ordinary client contexts with rules enabled.
 - Tests run serially because each test resets the shared demo database. Client
   contexts are cleaned up afterwards. No data is imported or exported.
-- Do not open the browser application as part of these tests: its existing
-  configuration still names the live project. These test dependencies do not
+- For isolated browser testing, use [LOCAL_BROWSER_TESTING.md](LOCAL_BROWSER_TESTING.md)
+  and stop that environment before running this suite (the emulator ports overlap).
+  Opening HTML directly or using a generic local server is blocked. These dependencies do not
   upgrade the Firebase SDK imported by the browser pages.
 
 ## Coverage and expected failures

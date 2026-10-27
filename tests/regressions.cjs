@@ -31,6 +31,8 @@ function harness(file) {
   const auth = { currentUser: { uid: 'juror-1' } };
   const c = {
     document: { getElementById: get, querySelectorAll: () => choices, addEventListener() {}, createElement: () => element() },
+    initializeFirebaseClient: () => ({ app: {}, auth, db: {}, accountDomain: 'students.modern-olympia.firebaseapp.com' }),
+    initializeAuth() {}, inMemoryPersistence: {}, connectAuthEmulator() {}, connectFirestoreEmulator() {},
     initializeApp: () => ({}), getAuth: () => auth, getFirestore: () => ({}),
     onAuthStateChanged: (_, fn) => authCallbacks.push(user => { auth.currentUser = user; return fn(user); }),
     onSnapshot: (ref, next, error) => { const sub = { ref, next, error }; snapshots.push(sub); return () => { sub.stopped = true; }; },
