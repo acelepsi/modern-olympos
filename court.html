@@ -36,6 +36,9 @@
     </div>
   </header>
 
+  <p class="court-notice" id="court-status" role="status" aria-live="polite"></p>
+  <p class="court-notice" id="account-status" role="status" aria-live="polite"></p>
+
   <!-- ================= LOGIN MODAL ================= -->
   <div id="login-overlay" class="modal-overlay" hidden>
     <div class="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
@@ -46,14 +49,14 @@
       <form id="login-form" class="code-form" autocomplete="off">
         <input
           type="text"
-          id="access-code"
+          id="access-code" aria-label="Student code"
           class="code-input"
           placeholder="e.g. STUDENT-001"
           autocapitalize="characters"
           autocomplete="username"
           required
         />
-        <input type="password" id="student-password" class="code-input" placeholder="Password" autocomplete="current-password" minlength="8" required />
+        <input type="password" id="student-password" aria-label="Student password" class="code-input" placeholder="Password" autocomplete="current-password" minlength="8" required />
         <button type="submit" id="enter-btn" class="enter-btn">Enter</button>
         <p id="login-status" class="login-status" role="status"></p>
       </form>
@@ -91,8 +94,8 @@
              no login affordance lives down here anymore. -->
         <form class="composer" id="prosecution-composer" hidden>
           <p class="submission-hint">Save a private draft, or send it to the administrator for approval.</p>
-          <textarea placeholder="File your argument…" required></textarea>
-          <input type="url" placeholder="Evidence link (optional) — Google Drive, Imgur, etc." />
+          <textarea aria-label="Argument" maxlength="5000" placeholder="File your argument…" required></textarea>
+          <input type="url" aria-label="Evidence URL (optional)" maxlength="1000" placeholder="Evidence link (optional) — Google Drive, Imgur, etc." />
           <div class="submit-row">
             <button type="button" data-action="draft">Save draft</button>
             <button type="submit">Send for approval</button>
@@ -121,8 +124,8 @@
 
         <form class="composer" id="defense-composer" hidden>
           <p class="submission-hint">Save a private draft, or send it to the administrator for approval.</p>
-          <textarea placeholder="File your argument…" required></textarea>
-          <input type="url" placeholder="Evidence link (optional) — Google Drive, Imgur, etc." />
+          <textarea aria-label="Argument" maxlength="5000" placeholder="File your argument…" required></textarea>
+          <input type="url" aria-label="Evidence URL (optional)" maxlength="1000" placeholder="Evidence link (optional) — Google Drive, Imgur, etc." />
           <div class="submit-row">
             <button type="button" data-action="draft">Save draft</button>
             <button type="submit">Send for approval</button>
@@ -131,7 +134,7 @@
 
         <p class="submission-feedback" id="defense-feedback" role="status"></p>
         <p class="locked-notice" id="defense-locked">
-          Only Lawyers may post here. Log in from the header to participate.
+          Only defense representatives may post here. Log in from the header to participate.
         </p>
       </section>
 
@@ -141,7 +144,7 @@
     <!-- ================= DELIBERATION (jury vote / public results) ================= -->
     <section class="deliberation" id="deliberation">
       <h2>Deliberation</h2>
-      <p class="subhead" id="deliberation-subhead">Jury members may vote once when the administrator opens voting. Results remain private until the case is closed.</p>
+      <p class="subhead" id="deliberation-subhead">Jury members may vote once when the administrator opens voting. The final tally is public only after the teacher closes the case and publishes it.</p>
 
       <!-- Jury voting form: hidden entirely unless BOTH are true —
            trial status === 'verdict' AND signed-in role === 'jury'.
@@ -152,7 +155,7 @@
           <button type="button" data-choice="not-guilty" aria-pressed="false">Not Guilty</button>
         </div>
         <p id="jury-selection-status" role="status" aria-live="polite">No verdict selected.</p>
-        <textarea id="vote-justification" placeholder="Explain your verdict (at least 15 characters)…" required></textarea>
+        <textarea aria-label="Reason for your jury vote" minlength="15" maxlength="2000" id="vote-justification" placeholder="Explain your verdict (at least 15 characters)…" required></textarea>
         <div class="submit-row">
           <button type="submit" id="cast-vote">Cast Final Vote</button>
         </div>

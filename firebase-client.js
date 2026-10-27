@@ -13,14 +13,14 @@ const demoConfig = Object.freeze({
   projectId: 'demo-modern-olympos-browser',
   appId: 'demo-modern-olympos-browser'
 });
-export function initializeFirebaseClient(sdk) {
+export function initializeFirebaseClient(sdk, options = {}) {
   const local = globalThis.__OLYMPOS_LOCAL_TEST__ === true;
   const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
   // Local pages must opt in through the dedicated server. Flags cannot activate on a hosted site.
   if (local && (!loopback || location.protocol !== 'http:')) throw Error('Local test mode requires HTTP loopback.');
   if (!local && (loopback || location.protocol === 'file:')) throw Error('Firebase blocked: use npm run local:browser for local testing.');
-  const app = sdk.initializeApp(local ? demoConfig : productionConfig);
-  const auth = local ? sdk.initializeAuth(app, { persistence: sdk.inMemoryPersistence }) : sdk.getAuth(app);
+  const app = sdk.initializeApp(local ? demoConfig : productionConfig, options.name);
+  const auth = (local || options.isolatedAuth) ? sdk.initializeAuth(app, { persistence: sdk.inMemoryPersistence }) : sdk.getAuth(app);
   if (local) sdk.connectAuthEmulator(auth, 'http://127.0.0.1:9099');
   const db = sdk.getFirestore(app);
   if (local) sdk.connectFirestoreEmulator(db, '127.0.0.1', 8080);

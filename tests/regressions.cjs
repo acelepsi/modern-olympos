@@ -32,6 +32,7 @@ function harness(file) {
   const c = {
     document: { getElementById: get, querySelectorAll: () => choices, addEventListener() {}, createElement: () => element() },
     initializeFirebaseClient: () => ({ app: {}, auth, db: {}, accountDomain: 'students.modern-olympia.firebaseapp.com' }),
+    deleteApp: async()=>{}, createUserWithEmailAndPassword: async()=>({user:{uid:"new-student"}}), deleteUser: async()=>{},
     initializeAuth() {}, inMemoryPersistence: {}, connectAuthEmulator() {}, connectFirestoreEmulator() {},
     initializeApp: () => ({}), getAuth: () => auth, getFirestore: () => ({}),
     onAuthStateChanged: (_, fn) => authCallbacks.push(user => { auth.currentUser = user; return fn(user); }),
@@ -45,9 +46,11 @@ function harness(file) {
     setDoc: async () => {}, updateDoc: async () => {}, addDoc: async () => {}, serverTimestamp: () => 'server-time',
     signOut: async () => {}, signInWithEmailAndPassword: async () => {},
     confirm: () => true, alert: message => { throw Error(message); },
-    setTimeout() {}, queueMicrotask() {}, console,
+    setTimeout() {}, queueMicrotask() {}, console, URL,
   };
   vm.createContext(c);
+  const accountModule=fs.readFileSync(path.join(root,'student-accounts.js'),'utf8').replace(/^export /gm,'');
+  vm.runInContext(accountModule,c);
   const source = fs.readFileSync(path.join(root, file), 'utf8').replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];/gm, '');
   vm.runInContext(source, c, { filename: file });
   return { c, get, choices, authCallbacks, snapshots, run: code => vm.runInContext(code, c) };
@@ -773,4 +776,73 @@ test('failed closure releases its lock so the administrator can retry', async ()
   assert.match(h.get('status').textContent, /Unable to save.*Synthetic write failure/);
   assert.equal(h.get('trial-form').querySelector('button').disabled, false);
   await h.get('trial-form').handlers.submit({ preventDefault() {} }); assert.equal(attempts, 2);
+});
+
+test('administrator creates a student profile without changing the teacher session', async () => {
+ const h=await adminTrials(),writes=[];let closed=0;
+ h.get('student-code').value='PUPIL-001';h.get('student-name').value='Public Alias';h.get('student-password').value='LocalPassword123!';
+ h.c.createUserWithEmailAndPassword=async(_,email,password)=>{assert.equal(email,'pupil-001@students.modern-olympia.firebaseapp.com');assert.equal(password,'LocalPassword123!');return {user:{uid:'new-student'}}};
+ h.c.deleteApp=async()=>{closed++};h.c.setDoc=async(...args)=>writes.push(args);
+ await h.get('student-account-form').handlers.submit({preventDefault(){}});
+ assert.equal(h.c.getAuth().currentUser.uid,'admin');assert.equal(closed,1);assert.equal(writes.length,1);
+ assert.deepEqual(JSON.parse(JSON.stringify(writes[0])),[['students','new-student'],{displayName:'Public Alias',accountType:'student',active:true}]);
+ assert.equal(h.get('student-password').value,'');assert.match(h.get('student-account-status').textContent,/Student created/);
+});
+test('student creation suppresses duplicate submits while Auth is pending', async () => {
+ const h=await adminTrials(),wait=deferred();let calls=0;
+ h.get('student-code').value='PUPIL-001';h.get('student-name').value='Alias';h.get('student-password').value='LocalPassword123!';
+ h.c.createUserWithEmailAndPassword=async()=>{calls++;return wait.promise};
+ const first=h.get('student-account-form').handlers.submit({preventDefault(){}});
+ await tick();await h.get('student-account-form').handlers.submit({preventDefault(){}});assert.equal(calls,1);assert.equal(h.get('create-student').disabled,true);
+ wait.resolve({user:{uid:'new-student'}});await first;assert.equal(h.get('create-student').disabled,false);
+});
+test('signing out during account creation prevents profile writes and cleans up the new Auth account', async () => {
+ const h=await adminTrials(),wait=deferred();let writes=0,removed=0;
+ h.get('student-code').value='PUPIL-001';h.get('student-name').value='Alias';h.get('student-password').value='LocalPassword123!';
+ h.c.createUserWithEmailAndPassword=async()=>wait.promise;h.c.setDoc=async()=>{writes++};h.c.deleteUser=async()=>{removed++};
+ const first=h.get('student-account-form').handlers.submit({preventDefault(){}});await tick();await h.authCallbacks[0](null);wait.resolve({user:{uid:'new-student'}});await first;
+ assert.equal(writes,0);assert.equal(removed,1);assert.equal(h.get('account-rows').children.length,0);assert.equal(h.get('student-account-status').textContent,'');
+});
+test('administrator can pause a student and failed access changes never report success', async () => {
+ const h=await adminTrials(),writes=[];h.c.updateDoc=async(...args)=>writes.push(args);
+ h.run('students[0].active=true;renderAccounts()');
+ const button=h.get('account-rows').children[0].children[2].children[0];await button.handlers.click();
+ assert.equal(writes[0][0][0],'students');assert.equal(writes[0][1].active,false);assert.match(h.get('student-account-status').textContent,/paused/);
+ const resume=h.get('account-rows').children[0].children[2].children[0];h.c.updateDoc=async()=>{throw Error('Synthetic error')};await resume.handlers.click();
+ assert.match(h.get('student-account-status').textContent,/Unable to change access/);assert.equal(resume.disabled,false);
+});
+test('authenticated student with missing or paused profile retains a sign-out control', async () => {
+ const h=harness('app.js');await h.authCallbacks[0]({uid:'student'});h.run('currentProfile=null;renderIdentity()');
+ assert.equal(h.get('session-chip').hidden,false);assert.equal(h.get('logout-btn').hidden,false);assert.match(h.get('account-status').textContent,/not available/);
+ h.run("currentProfile={displayName:'Alias',active:false,accountType:'student'};renderIdentity()");
+ assert.match(h.get('account-status').textContent,/paused/);assert.equal(h.get('prosecution-composer').hidden,true);assert.equal(h.get('jury-vote-form').hidden,true);
+});
+test('student sign-out failure is visible instead of being console-only', async () => {
+ const h=harness('app.js');h.c.signOut=async()=>{throw Error('Offline')};await h.get('logout-btn').handlers.click();assert.match(h.get('account-status').textContent,/Unable to sign out/);
+});
+test('duplicate argument submits create only one pending submission', async () => {
+ const h=harness('app.js'),wait=deferred();let writes=0;
+ h.run("activeTrialId='case-a';currentTrial.status='trial';currentProfile={active:true,accountType:'student',displayName:'Alias'};currentAssignment={role:'prosecutor'}");
+ h.get('prosecution-composer').querySelector('textarea').value='Supported argument';h.c.addDoc=async()=>{writes++;return wait.promise};
+ const first=h.get('prosecution-composer').handlers.submit({preventDefault(){}});await h.get('prosecution-composer').handlers.submit({preventDefault(){}});assert.equal(writes,1);
+ wait.resolve({id:'new-post'});await first;assert.match(h.get('prosecution-feedback').textContent,/Sent to administrator/);
+});
+test('teacher approval publishes and return includes feedback through the existing moderation workflow', async () => {
+ for(const approve of [true,false]){
+  const h=await adminTrials();const writes=[];
+  h.c.getDocs=async()=>({docs:[{id:'post',data:()=>({authorName:'Alias',section:'prosecution',text:'Argument',status:'pending'})}]});
+  await h.get('refresh-submissions').handlers.click();const panel=h.get('review-list').children[1];
+  panel.children[2].value='Explain your evidence';h.c.updateDoc=async(...args)=>writes.push(args);
+  await panel.children[approve?3:4].onclick();assert.equal(writes[0][0][3],'post');
+  assert.equal(writes[0][1].status,approve?'published':'returned');assert.equal(writes[0][1].feedback,approve?'':'Explain your evidence');
+ }
+});
+test('new trial action clears dependent panels and saves a separate case',async()=>{
+ const h=await adminTrials();await h.get('new-trial').handlers.click();assert.equal(h.get('trial-id').value,'');assert.equal(h.get('trial-id').readOnly,false);assert.equal(h.get('trial-select').value,'');assert.equal(h.get('publish-verdict').disabled,true);
+ h.get('trial-id').value='fresh-case';h.get('trial-title').value='Athena: A Fair Judgment?';h.get('trial-status').value='trial';const writes=[];
+ h.c.getDoc=async()=>snapshot(null);h.c.setDoc=async(...args)=>writes.push(args);
+ await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal(writes[0][0][1],'fresh-case');assert.equal(h.get('trial-select').value,'fresh-case');assert.equal(h.get('trial-id').readOnly,true);
+});
+test('active teacher with a legacy juror assignment never sees student voting controls',async()=>{
+ const h=harness('app.js');h.run("activeTrialId='case-a';currentTrial.status='verdict';currentProfile={active:true,accountType:'teacher',displayName:'Teacher'};currentAssignment={role:'juror'};checkingVote=false;renderIdentity()");assert.equal(h.get('jury-vote-form').hidden,true);
 });

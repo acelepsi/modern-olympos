@@ -1,13 +1,15 @@
-import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
-import {getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+import {initializeApp,deleteApp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
+import {getAuth,createUserWithEmailAndPassword,deleteUser,initializeAuth,inMemoryPersistence,connectAuthEmulator,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import {initializeFirebaseClient} from './firebase-client.js';
+import {provisionStudent} from './student-accounts.js';
 const {app,auth,db}=initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator});
 const $=id=>document.getElementById(id),status=(s)=>{$('status').textContent=s};
 const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
 let authRevision=0, selectionRevision=0, selectedTrialId=null, adminAuthorized=false;
 let savingTrial=false;
+let creatingStudent=false, studentRequest=0, provisionSequence=0;
 // Keep writes locked across trial reselection until the original operation settles.
 const pendingTrialSaves=new Set();
 const panels={roles:{request:0,ready:false},review:{request:0,ready:false},votes:{request:0,ready:false}};
@@ -48,7 +50,7 @@ function renderTrialOptions(preferred){
 function renderTrials(preferred=selectedTrialId){renderTrialOptions(preferred);return selectTrial($('trial-select').value)}
 function syncTrialEditor(){
  const trial=trials.find(t=>t.id===selectedTrialId);
- $('trial-id').value=trial?.id||'';$('trial-title').value=trial?.title||'';$('trial-status').value=trial?.status||'trial';
+ $('trial-id').readOnly=!!trial;$('trial-id').value=trial?.id||'';$('trial-title').value=trial?.title||'';$('trial-status').value=trial?.status||'trial';
 }
 // All selection changes, including successful saves, refresh the same dependent panels.
 async function selectTrial(id){
@@ -60,6 +62,7 @@ async function selectTrial(id){
  return Promise.all([renderStudents(),loadReviewQueue(),refreshVotes()]);
 }
 $('trial-select').addEventListener('change',()=>selectTrial($('trial-select').value));
+$('new-trial').addEventListener('click',()=>{if(!adminAuthorized)return;const pending=selectTrial(null);$('trial-id').focus();status('Enter a new permanent trial ID and title, then save. Existing trials are unchanged.');return pending;});
 onSnapshot(doc(db,'settings','currentTrial'),snap=>{
  activeTrialId=snap.exists()?snap.data().trialId:null;
  $('active-trial-label').textContent=activeTrialId?`Active: ${activeTrialId}`:'No active trial selected';
@@ -79,6 +82,8 @@ onAuthStateChanged(auth,async user=>{
  const revision=++authRevision,uid=user?.uid;
  adminAuthorized=false;selectedTrialId=null;selectionRevision++;students=[];trials=[];savingTrial=false;
  for(const name of Object.keys(panels)){panels[name].request++;panels[name].ready=false;panelNode(name).replaceChildren();panelNode(name).setAttribute('aria-busy','false')}
+ studentRequest++;$('account-rows').replaceChildren();$('student-account-status').textContent='';
+ for(const id of ['student-code','student-name','student-password'])$(id).value='';
  for(const id of ['student-rows','trial-select'])$(id).replaceChildren();
  $('trial-select').value='';$('identity').textContent='';
  for(const id of ['trial-id','trial-title','password'])$(id).value='';
@@ -92,7 +97,7 @@ onAuthStateChanged(auth,async user=>{
   const [ss,tt]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'trials'))]);
   if(!currentAdmin(revision,uid))return;
   students=ss.docs.filter(x=>x.data().accountType==='student').map(x=>({id:x.id,...x.data()}));trials=tt.docs.map(x=>({id:x.id,...x.data()}));
-  adminAuthorized=true;$('identity').textContent='Signed in as '+(profile.data().displayName||user.email);
+  adminAuthorized=true;renderAccounts();$('identity').textContent='Signed in as '+(profile.data().displayName||user.email);
   $('dashboard').hidden=false;$('login-panel').hidden=true;$('switch-account').hidden=true;
   const pending=renderTrials(),context=selectionContext(),results=await pending;
   if(sameSelection(context))status(results.every(Boolean)?'Administrator access verified.':selectedTrialId?'Administrator access verified. Some panels could not be loaded.':'Administrator access verified. Create a trial to begin.');
@@ -101,7 +106,7 @@ onAuthStateChanged(auth,async user=>{
 $('trial-form').addEventListener('submit',async e=>{
  e.preventDefault();const context=selectionContext();if(!sameSelection(context)||savingTrial)return;
  const id=$('trial-id').value.trim(),title=$('trial-title').value.trim(),statusValue=$('trial-status').value;
- if(!/^[a-z0-9-]+$/.test(id)||!title)return status('Invalid trial ID or title');
+ if(!/^[a-z0-9-]{1,80}$/.test(id)||!title)return status('Invalid trial ID or title');
  if(pendingTrialSaves.has(id))return;
  const btn=$('trial-form').querySelector('button');pendingTrialSaves.add(id);savingTrial=true;btn.disabled=true;
  try{
@@ -136,6 +141,7 @@ async function renderStudents(){
    const tr=document.createElement('tr'),name=document.createElement('td'),roleCell=document.createElement('td'),action=document.createElement('td'),select=document.createElement('select'),btn=document.createElement('button');
    name.textContent=student.displayName||student.id;
    for(const role of roles){const option=document.createElement('option');option.value=role;option.textContent=role;select.append(option)}
+   select.setAttribute('aria-label',`Role for ${student.displayName||student.id}`);
    select.value=roles.includes(assigned[student.id])?assigned[student.id]:'unassigned';btn.textContent='Save role';
    select.addEventListener('change',()=>{btn.textContent='Save role *'});
    btn.addEventListener('click',async()=>{
@@ -164,7 +170,7 @@ async function loadReviewQueue(){
    const wrap=document.createElement('div');wrap.className='panel';
    const heading=document.createElement('h3');heading.textContent=`${post.authorName||post.authorUid} — ${post.section}`;
    const body=document.createElement('p');body.textContent=post.text;wrap.append(heading,body);
-   if(post.evidenceUrl){const link=document.createElement('a');link.href=post.evidenceUrl;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Evidence link';wrap.append(link)}
+   if(post.evidenceUrl){try{const url=new URL(post.evidenceUrl);if(['http:','https:'].includes(url.protocol)){const link=document.createElement('a');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Evidence link';wrap.append(link)}}catch{}}
    const feedback=document.createElement('input');feedback.placeholder='Feedback for return (required)';feedback.maxLength=1000;feedback.style.width='min(95%, 500px)';wrap.append(feedback);
    const buttons=[];
    for(const [label,next] of [['Approve','published'],['Return for revision','returned']]){
@@ -251,4 +257,45 @@ $('publish-verdict').addEventListener('click',async()=>{
   if(sameSelection(context)&&!refreshed)status(`Final tally published for ${context.trialId}; ballot count refresh failed. The totals were saved.`);
  }catch(err){if(current())status(err.code==='already-published'?`Previously published totals for ${context.trialId}: ${err.message}`:`Publication not confirmed for ${context.trialId}: ${err.code||err.message}. Reconnect and retry this check to verify saved results.`)}
  finally{if(current()){btn.disabled=false;$('refresh-votes').disabled=false}}
+});
+
+function renderAccounts(){
+ const revision=authRevision,uid=auth.currentUser?.uid,request=++studentRequest;
+ const current=()=>adminAuthorized&&currentAdmin(revision,uid)&&request===studentRequest;
+ const list=$('account-rows');list.replaceChildren();
+ for(const student of students){
+  const row=document.createElement('tr'),name=document.createElement('td'),access=document.createElement('td'),action=document.createElement('td'),button=document.createElement('button');
+  name.textContent=student.displayName||student.id;access.textContent=student.active===true?'Can participate':'Participation paused';
+  button.type='button';button.textContent=student.active===true?'Pause participation':'Resume participation';
+  button.addEventListener('click',async()=>{
+   if(!current()||button.disabled)return;
+   const active=student.active!==true;button.disabled=true;
+   try{
+    await updateDoc(doc(db,'students',student.id),{active});if(!current())return;
+    student.active=active;renderAccounts();$('student-account-status').textContent=`${name.textContent}: participation ${active?'enabled':'paused'}.`;
+   }catch(error){if(current()){$('student-account-status').textContent='Unable to change access: '+(error.code||error.message);button.disabled=false}}
+  });
+  action.append(button);row.append(name,access,action);list.append(row);
+ }
+ if(!students.length)$('student-account-status').textContent='No student accounts yet. Create one below.';
+}
+$('student-account-form').addEventListener('submit',async event=>{
+ event.preventDefault();if(!adminAuthorized||creatingStudent)return;
+ const revision=authRevision,uid=auth.currentUser?.uid,current=()=>adminAuthorized&&currentAdmin(revision,uid);
+ const button=$('create-student');creatingStudent=true;button.disabled=true;
+ const input={code:$('student-code').value,name:$('student-name').value,password:$('student-password').value};
+ $('student-password').value='';$('student-account-status').textContent='Creating student access…';
+ try{
+  const student=await provisionStudent(input,{
+   current,
+   open:()=>initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator},{name:'student-provision-'+(++provisionSequence),isolatedAuth:true}),
+   create:createUserWithEmailAndPassword,remove:deleteUser,close:session=>deleteApp(session.app),
+   save:(id,profile)=>setDoc(doc(db,'students',id),profile),read:id=>getDocFromServer(doc(db,'students',id))
+  });
+  if(!current())return;
+  students.push(student);renderAccounts();await renderStudents();if(!current())return;
+  $('student-code').value='';$('student-name').value='';
+  $('student-account-status').textContent=`Student created. Code: ${student.code.toUpperCase()}. Give the code and chosen password privately to the student, then assign a trial role.`;
+ }catch(error){if(current()){const messages={'auth/email-already-in-use':'That student code already exists. Use a different code; the existing account was not changed.','auth/weak-password':'Choose a stronger student password and try again.','auth/network-request-failed':'Check your connection and try again.','permission-denied':'Student access could not be saved. Ask the project owner to verify the prepared administrator rules.'};$('student-account-status').textContent='Unable to create student: '+(messages[error.code]||error.message||error.code)}}
+ finally{creatingStudent=false;button.disabled=false}
 });

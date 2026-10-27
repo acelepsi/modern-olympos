@@ -90,10 +90,10 @@ test('owners can read their profile/assignment but not another student', async (
   for (const path of ['students/defender', 'trials/case-a/assignments/defender']) await assertFails(getDoc(ref('prosecutor', path)));
 });
 for (const uid of [null, 'prosecutor', 'other-teacher', ADMIN]) {
-  test(`${uid || 'visitor'} cannot create, modify, delete or promote profiles through client rules`, async () => {
+  test(`${uid || 'visitor'} cannot create teachers, promote or delete profiles through client rules`, async () => {
     await assertFails(setDoc(ref(uid, 'students/new-account'), { active: true, accountType: 'teacher', displayName: 'Impostor' }));
     await assertFails(updateDoc(ref(uid, 'students/prosecutor'), { accountType: 'teacher' }));
-    await assertFails(updateDoc(ref(uid, 'students/prosecutor'), { active: true }));
+    if(uid!==ADMIN)await assertFails(updateDoc(ref(uid, 'students/prosecutor'), { active: true }));
     await assertFails(deleteDoc(ref(uid, 'students/prosecutor')));
   });
 }
@@ -467,3 +467,38 @@ for (const legacy of [{ title: 'Missing phase' }, { title: 'Old phase', status: 
     await assertSucceeds(updateDoc(ref(ADMIN, 'trials/legacy-phase'), { status: 'trial' }));
   });
 }
+
+// Classroom account management keeps the pinned administrator as the only provisioner.
+test('administrator can create a minimal active student profile and pause/resume participation',async()=>{
+ await assertSucceeds(setDoc(ref(ADMIN,'students/new-student'),{displayName:'Classroom Alias',accountType:'student',active:true}));
+ await assertSucceeds(updateDoc(ref(ADMIN,'students/new-student'),{active:false}));
+ await assertSucceeds(updateDoc(ref(ADMIN,'students/new-student'),{active:true}));
+});
+for(const fields of [{accountType:'teacher'},{active:false},{password:'secret'},{displayName:''},{displayName:'x'.repeat(101)}]){
+ test('administrator student creation rejects invalid fields '+Object.keys(fields)[0]+JSON.stringify(fields).length,async()=>{
+  await assertFails(setDoc(ref(ADMIN,'students/new-student'),{displayName:'Alias',accountType:'student',active:true,...fields}));
+ });
+}
+test('administrator cannot edit teacher profiles or change the student account type',async()=>{
+ await assertFails(updateDoc(ref(ADMIN,`students/${ADMIN}`),{active:false}));
+ await assertFails(updateDoc(ref(ADMIN,'students/other-teacher'),{active:false}));
+ await assertFails(updateDoc(ref(ADMIN,'students/prosecutor'),{accountType:'teacher'}));
+});
+test('administrator can pause a legacy student without removing existing extra fields',async()=>{
+ await seed({'students/legacy':{displayName:'Legacy Alias',accountType:'student',active:true,legacyField:'preserved'}});
+ await assertSucceeds(updateDoc(ref(ADMIN,'students/legacy'),{active:false}));
+ assert.equal((await getDoc(ref(ADMIN,'students/legacy'))).data().legacyField,'preserved');
+});
+test('pausing a student prevents new submissions while preserving old published material',async()=>{
+ await assertSucceeds(updateDoc(ref(ADMIN,'students/prosecutor'),{active:false}));
+ await assertFails(setDoc(ref('prosecutor','trials/case-a/submissions/paused-student'),submission()));
+});
+test('public archive query returns only published submissions and never grants draft access',async()=>{
+ await seed({'trials/archive-case':{title:'Archived case',status:'closed',verdictSummary:{guilty:1,notGuilty:0}},
+ 'trials/archive-case/submissions/published':storedSubmission({trialId:'archive-case',status:'published'}),
+ 'trials/archive-case/submissions/private':storedSubmission({trialId:'archive-case',status:'draft'})});
+ const cases=await assertSucceeds(getDocs(query(collection(db(null),'trials'),where('status','==','closed'))));assert.ok(cases.docs.some(item=>item.id==='archive-case'));
+ const posts=await assertSucceeds(getDocs(query(collection(db(null),'trials/archive-case/submissions'),where('status','==','published'))));assert.equal(posts.size,1);
+ await assertFails(getDoc(ref(null,'trials/archive-case/submissions/private')));
+ await assertFails(getDocs(collection(db(null),'trials/archive-case/votes')));
+});

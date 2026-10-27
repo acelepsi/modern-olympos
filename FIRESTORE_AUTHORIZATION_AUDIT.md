@@ -1,3 +1,5 @@
+> Historical phase 4 audit. Current classroom completion adds designated-administrator-only student profile creation/access updates (no student self-provisioning), aligns trial IDs to 80 characters, and prevents teacher profiles from showing student voting controls. See CLASSROOM_PILOT.md for the current workflow and remaining trust limits.
+
 # Firestore authorization review
 
 Baseline: GitHub `main` at `5d897ed0aabed119bf830a14eadc4e2b87f143c8`

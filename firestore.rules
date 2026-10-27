@@ -8,8 +8,18 @@ service cloud.firestore {
   match /students/{uid} {
    allow get: if own(uid) || admin();
    allow list: if admin();
-   // Only Firebase Console/Admin SDK provisions or edits student profiles.
-   allow write: if false;
+   // The designated administrator may provision students and pause participation.
+   // Existing extra profile fields are preserved; teacher profiles cannot be edited here.
+   allow create: if admin() && uid != request.auth.uid
+     && request.resource.data.keys().hasOnly(['displayName','accountType','active'])
+     && request.resource.data.displayName is string && request.resource.data.displayName.trim().size() > 0
+     && request.resource.data.displayName.size() <= 100
+     && request.resource.data.accountType == 'student' && request.resource.data.active == true;
+   allow update: if admin() && uid != request.auth.uid && resource.data.accountType == 'student'
+     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','active'])
+     && request.resource.data.displayName is string && request.resource.data.displayName.trim().size() > 0
+     && request.resource.data.displayName.size() <= 100 && request.resource.data.active is bool;
+   allow delete: if false;
   }
   match /settings/currentTrial {
    allow get: if true;

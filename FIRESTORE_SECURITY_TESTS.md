@@ -42,7 +42,7 @@ The CLI normally shuts its emulators down automatically after the tests finish.
 ## Safety and isolation
 
 - The command explicitly selects **`demo-modern-olympos`**, not the live project.
-  No `.firebaserc`, deployment command, or Console configuration is added.
+  No `.firebaserc` or production credentials are used by tests. Separate explicit owner-only deployment preparation is documented in CLASSROOM_PILOT.md.
 - The test module refuses to run unless `FIRESTORE_EMULATOR_HOST` is exactly
   `127.0.0.1:8080`. It also rejects non-demo project IDs in `GCLOUD_PROJECT`,
   `GOOGLE_CLOUD_PROJECT`, or `FIREBASE_CONFIG` when those variables are present.
@@ -69,10 +69,10 @@ The CLI normally shuts its emulators down automatically after the tests finish.
 
 ## Coverage and expected failures
 
-The 125 emulator cases cover (106 existing cases plus 19 lifecycle cases):
+The security suite now contains 135 cases (125 prior cases plus 10 account/archive cases):
 
 - Public trial/pointer/published-content reads and the legacy public arguments.
-- Private profiles and assignments, prohibited profile provisioning, forged
+- Private profiles and assignments, prohibited student self-provisioning and teacher escalation, forged
   role claims, self-assignment and batched privilege escalation.
 - Administrator trial creation/editing, activation, supported assignments,
   protected fields, denied deletion and pointer validation.
@@ -116,3 +116,7 @@ See [TRIAL_LIFECYCLE_AND_VERDICTS.md](TRIAL_LIFECYCLE_AND_VERDICTS.md) for the
 lifecycle audit, compatibility implications, owner decisions, and the limit on
 proving administrator-supplied totals. The package lock still pins the test
 SDK/toolchain and does not replace the site's browser SDK.
+
+## Classroom completion additions
+
+The designated administrator can now create minimal student profiles and pause/resume participation; no student or other teacher can do so. New cases cover strict profile fields, teacher-profile immutability, legacy field preservation, paused participation and published-only archive queries. The separate Auth emulator suite exercises actual secondary-session account creation without switching the teacher. The earlier validation counts above are historical; the current PR records executed results.

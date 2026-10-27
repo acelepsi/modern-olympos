@@ -25,11 +25,19 @@
     </div>
   </header>
 
-  <main class="placeholder-page">
+  <main class="archive-page">
     <h1>Completed Trials</h1>
-    <p>The archive of past verdicts will be built here — every closed trial, its final argument threads, and the jury's ruling.</p>
-    <p class="placeholder-note">Coming soon.</p>
+    <p>Explore the mythological cases our classroom has completed. Arguments appear here only after teacher approval. <a href="court.html">Follow the active trial</a>.</p>
+    <button id="archive-refresh" type="button">Refresh archive</button>
+    <p id="archive-status" role="status" aria-live="polite"></p>
+    <ul id="archive-list" aria-label="Completed trials"></ul>
+    <section id="archive-detail" hidden aria-labelledby="archive-title">
+      <h2 id="archive-title"></h2><p id="archive-info"></p>
+      <p id="archive-verdict" class="archive-verdict"></p>
+      <div class="archive-columns"><section><h3>Prosecution</h3><div id="archive-prosecution"></div></section><section><h3>Defense</h3><div id="archive-defense"></div></section></div>
+    </section>
   </main>
 
+<script type="module" src="archive.js"></script>
 </body>
 </html>
