@@ -29,6 +29,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 import { initializeFirebaseClient } from './firebase-client.js';
+import { renderPortrait } from './portraits.js';
 const { app, auth, db, accountDomain } = initializeFirebaseClient({
   initializeApp, getAuth, initializeAuth, inMemoryPersistence, connectAuthEmulator,
   getFirestore, connectFirestoreEmulator
@@ -250,12 +251,14 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
   const charge = document.getElementById("defendant-charge");
   if (title) title.textContent = activeTrialId ? "Loading trial…" : "No active trial";
   if (charge) charge.textContent = "";
+  renderPortrait(document.getElementById("mugshot"),null);
   setTrialStatus("closed");
   if (activeTrialId) {
     unsubscribeTrial = onSnapshot(doc(db, "trials", activeTrialId), trialSnap => {
       if (revision !== trialRevision) return;
       if (!trialSnap.exists()) {
         if (title) title.textContent = "Trial unavailable";
+        renderPortrait(document.getElementById("mugshot"),null);
         currentTrial.verdictSummary=null;setTrialStatus("closed");
         document.getElementById("court-status").textContent="The selected trial is unavailable. Please ask your teacher.";
         return;
@@ -264,13 +267,14 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
       currentTrial.verdictSummary = data.verdictSummary || null;
       renderPublicVerdict();
       if (title) title.textContent = data.title || activeTrialId;
+      renderPortrait(document.getElementById("mugshot"),data.portraitUrl,`Portrait for ${data.title||activeTrialId}`);
       if (charge) charge.textContent = data.charge || "";
       setTrialStatus(data.status || "closed");
       refreshMyVote();
-    }, err => { if (revision !== trialRevision)return;clearPrivateContext();currentTrial.verdictSummary=null;setTrialStatus("closed");document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
+    }, err => { if (revision !== trialRevision)return;clearPrivateContext();renderPortrait(document.getElementById("mugshot"),null);currentTrial.verdictSummary=null;setTrialStatus("closed");document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
   }
   subscribeAssignmentForActiveTrial(auth.currentUser, authRevision);
-}, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();activeTrialId=null;currentTrial.verdictSummary=null;setTrialStatus("closed");refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
+}, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();renderPortrait(document.getElementById("mugshot"),null);activeTrialId=null;currentTrial.verdictSummary=null;setTrialStatus("closed");refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
 
 function renderIdentity() {
   document.getElementById("account-status").textContent=!auth.currentUser?"":!currentProfile?"Student access is not available. Ask your teacher or sign out to switch accounts.":currentProfile.active!==true?"Participation is paused. You may read public content; ask your teacher to resume access.":"";

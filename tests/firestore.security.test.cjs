@@ -502,3 +502,29 @@ test('public archive query returns only published submissions and never grants d
  await assertFails(getDoc(ref(null,'trials/archive-case/submissions/private')));
  await assertFails(getDocs(collection(db(null),'trials/archive-case/votes')));
 });
+
+// Optional portrait metadata only; authorization and lifecycle predicates are unchanged.
+for(const portraitUrl of ['https://images.example/athena.jpg',''])test('administrator can create/edit portrait '+(portraitUrl?'HTTPS':'empty'),async()=>{
+ await assertSucceeds(setDoc(ref(ADMIN,'trials/portrait-case'),{title:'Athena',status:'trial',portraitUrl}));
+ await assertSucceeds(updateDoc(ref(ADMIN,'trials/case-a'),{portraitUrl}));
+});
+for(const portraitUrl of ['http://images.example/a.jpg','javascript:alert(1)',42,'https://','https://bad host/a.jpg','https://user:password@images.example/a.jpg','https://images.example/'+ 'a'.repeat(2000)])test('invalid portrait is denied '+String(portraitUrl).slice(0,40),async()=>{
+ await assertFails(setDoc(ref(ADMIN,'trials/portrait-case'),{title:'Athena',status:'trial',portraitUrl}));
+ await assertFails(updateDoc(ref(ADMIN,'trials/case-a'),{portraitUrl}));
+});
+test('portrait metadata cannot grant student writes or reopen a closed case',async()=>{
+ await assertFails(updateDoc(ref('prosecutor','trials/case-a'),{portraitUrl:'https://images.example/a.jpg'}));
+ await seed({'trials/portrait-closed':{title:'Athena',status:'closed'}});
+ await assertFails(updateDoc(ref(ADMIN,'trials/portrait-closed'),{portraitUrl:'https://images.example/a.jpg',status:'verdict'}));
+ await assertSucceeds(updateDoc(ref(ADMIN,'trials/portrait-closed'),{portraitUrl:'https://images.example/a.jpg'}));
+});
+
+for(const uid of [null,'juror','prosecutor','defender','other-teacher'])test(`${uid||'visitor'} cannot create or update portrait metadata`,async()=>{
+ await assertFails(setDoc(ref(uid,'trials/unauthorized-portrait'),{title:'Athena',status:'trial',portraitUrl:'https://images.example/a.jpg'}));
+ await assertFails(updateDoc(ref(uid,'trials/case-a'),{portraitUrl:'https://images.example/a.jpg'}));
+});
+test('legacy trials remain writable without adding a portrait field',async()=>{
+ await assertSucceeds(setDoc(ref(ADMIN,'trials/portrait-legacy'),{title:'Legacy case',status:'trial'}));
+ await assertSucceeds(updateDoc(ref(ADMIN,'trials/portrait-legacy'),{title:'Updated legacy case'}));
+ assert.equal('portraitUrl' in (await getDoc(ref(ADMIN,'trials/portrait-legacy'))).data(),false);
+});
