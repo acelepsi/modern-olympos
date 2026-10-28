@@ -70,6 +70,12 @@ try{
     }
     document.getElementById('dossier').scrollIntoView();
     check(document.documentElement.scrollWidth<=innerWidth,'courtroom fits viewport without horizontal scrolling');
+    const phone=document.createElement('iframe');phone.style.cssText='position:fixed;left:-10000px;width:320px;height:900px;border:0';document.body.append(phone);
+    const phoneDoc=phone.contentDocument;phoneDoc.open();phoneDoc.write('<!doctype html><html><head><style>'+document.querySelector('style').textContent+'</style></head><body>'+document.getElementById('dossier').outerHTML+document.querySelector('.trial-progress').outerHTML+'</body></html>');phoneDoc.close();
+    check(phone.contentWindow.innerWidth===320,'phone fixture has a true 320px viewport');
+    check(phoneDoc.documentElement.scrollWidth<=320,'dossier and progress fit a 320px phone');
+    for(const step of phoneDoc.querySelectorAll('.trial-progress li')){const box=step.getBoundingClientRect(),label=step.lastElementChild.getBoundingClientRect();check(label.left>=box.left&&label.right<=box.right,'phase label stays inside its step at 320px')}
+    phone.remove();
     frames=[document.getElementById('mugshot')];
    }else{
     document.getElementById('archive-detail').hidden=false;
