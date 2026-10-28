@@ -65,3 +65,19 @@ test('administrator can provision student access and pause participation without
   assert.equal((await storeSdk.getDoc(storeSdk.doc(teacher.db,'students',created.user.uid))).data().active,false);
  }finally{await appSdk.deleteApp(app)}
 });
+test('real administrator can publish and withdraw an anonymous copy without exposing private ballot identities',async()=>{
+ const context={};vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'..','jury-reasoning.js'),'utf8').replace(/^export /gm,''),context);
+ const admin=clients.get('admin'),jurorId=account('juror').uid;let publicId=storeSdk.doc(storeSdk.collection(admin.db,'trials/local-published/publicReasoning')).id;
+ const trialRef=ref('admin','trials/local-published'),ballotRef=ref('admin',`trials/local-published/votes/${jurorId}`);
+ const originalVote=(await storeSdk.getDoc(ballotRef)).data(),originalTally=(await storeSdk.getDoc(trialRef)).data().verdictSummary;
+ const api={current:()=>true,identifiers:accounts.map(a=>a.uid),newId:()=>publicId,trial:trialRef,ballot:ballotRef,review:ref('admin',`trials/local-published/reasoningReviews/${jurorId}`),publicCopy:id=>ref('admin',`trials/local-published/publicReasoning/${id}`),run:callback=>storeSdk.runTransaction(admin.db,callback)};
+ await Promise.all([context.reviewReasoning(true,'An approved anonymous explanation for the public archive.',api),context.reviewReasoning(true,'An approved anonymous explanation for the public archive.',{...api,newId:()=>storeSdk.doc(storeSdk.collection(admin.db,'trials/local-published/publicReasoning')).id})]);
+ publicId=(await storeSdk.getDoc(api.review)).data().publicId;assert.equal((await storeSdk.getDocs(storeSdk.collection(admin.db,'trials/local-published/publicReasoning'))).size,1);
+ const anonymousApp=appSdk.initializeApp({projectId:PROJECT,apiKey:'demo-only-not-a-real-api-key'},'anonymous-reasoning-reader');apps.push(anonymousApp);
+ const anonymousDb=storeSdk.getFirestore(anonymousApp);storeSdk.connectFirestoreEmulator(anonymousDb,'127.0.0.1',8080);
+ const result=await storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/publicReasoning/${publicId}`));assert.deepEqual(Object.keys(result.data()).sort(),['choice','reason']);
+ await assert.rejects(storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/votes/${jurorId}`)),error=>error.code==='permission-denied');
+ await assert.rejects(storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/reasoningReviews/${jurorId}`)),error=>error.code==='permission-denied');
+ await context.reviewReasoning(false,'',api);assert.equal((await storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/publicReasoning/${publicId}`))).exists(),false);
+ assert.deepEqual((await storeSdk.getDoc(ballotRef)).data(),originalVote);assert.deepEqual((await storeSdk.getDoc(trialRef)).data().verdictSummary,originalTally);
+});

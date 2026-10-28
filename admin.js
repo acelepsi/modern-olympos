@@ -4,12 +4,14 @@ import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setD
 import {initializeFirebaseClient} from './firebase-client.js';
 import {provisionStudent} from './student-accounts.js';
 import {portraitUrl} from './portraits.js';
+import {reasoningReleased,reviewReasoning} from './jury-reasoning.js';
 const {app,auth,db}=initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator});
 const $=id=>document.getElementById(id),status=(s)=>{$('status').textContent=s};
 const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
 let authRevision=0, selectionRevision=0, selectedTrialId=null, adminAuthorized=false;
 let savingTrial=false;
+let reasoningRequest=0;
 let creatingStudent=false, studentRequest=0, provisionSequence=0;
 // Keep writes locked across trial reselection until the original operation settles.
 const pendingTrialSaves=new Set();
@@ -59,7 +61,7 @@ async function selectTrial(id){
  $('trial-select').value=selectedTrialId||'';selectionRevision++;savingTrial=false;
  $('trial-form').querySelector('button').disabled=pendingTrialSaves.has(selectedTrialId);
  $('activate-trial').disabled=!selectedTrialId||!adminAuthorized;
- syncTrialEditor();status('');
+ resetReasoningPanel();syncTrialEditor();status('');
  return Promise.all([renderStudents(),loadReviewQueue(),refreshVotes()]);
 }
 $('trial-select').addEventListener('change',()=>selectTrial($('trial-select').value));
@@ -81,7 +83,7 @@ async function logout(){try{await signOut(auth)}catch(err){status('Sign-out fail
 $('logout').addEventListener('click',logout);$('switch-account').addEventListener('click',logout);
 onAuthStateChanged(auth,async user=>{
  const revision=++authRevision,uid=user?.uid;
- adminAuthorized=false;selectedTrialId=null;selectionRevision++;students=[];trials=[];savingTrial=false;
+ adminAuthorized=false;selectedTrialId=null;selectionRevision++;students=[];trials=[];savingTrial=false;resetReasoningPanel();
  for(const name of Object.keys(panels)){panels[name].request++;panels[name].ready=false;panelNode(name).replaceChildren();panelNode(name).setAttribute('aria-busy','false')}
  studentRequest++;$('account-rows').replaceChildren();$('student-account-status').textContent='';
  for(const id of ['student-code','student-name','student-password'])$(id).value='';
@@ -303,3 +305,54 @@ $('student-account-form').addEventListener('submit',async event=>{
  }catch(error){if(current()){const messages={'auth/email-already-in-use':'That student code already exists. Use a different code; the existing account was not changed.','auth/weak-password':'Choose a stronger student password and try again.','auth/network-request-failed':'Check your connection and try again.','permission-denied':'Student access could not be saved. Ask the project owner to verify the prepared administrator rules.'};$('student-account-status').textContent='Unable to create student: '+(messages[error.code]||error.message||error.code)}}
  finally{creatingStudent=false;button.disabled=false}
 });
+
+function resetReasoningPanel(){
+ reasoningRequest++;$('reasoning-review-list').replaceChildren();$('reasoning-review-status').textContent='Load private reasoning after permanent closure and final tally publication. Nothing is published automatically.';
+ $('reasoning-review-status').setAttribute('aria-busy','false');$('load-reasoning').disabled=!adminAuthorized||!selectedTrialId;
+}
+async function loadReasoningReview(){
+ const context=selectionContext(),request=++reasoningRequest,current=()=>sameSelection(context)&&request===reasoningRequest;
+ if(!sameSelection(context)||!context.trialId)return;
+ const list=$('reasoning-review-list'),feedback=$('reasoning-review-status'),button=$('load-reasoning');
+ list.replaceChildren();button.disabled=true;feedback.textContent='Loading private jury reasoning…';feedback.setAttribute('aria-busy','true');
+ try{
+  const trial=await getDocFromServer(doc(db,'trials',context.trialId));if(!current())return;requireServerSnapshot(trial);
+  if(!trial.exists()||!reasoningReleased(trial.data()))throw Error('Permanently close this trial and publish its final tally before reviewing reasoning for public release.');
+  const [ballots,reviews,copies]=await Promise.all(['votes','reasoningReviews','publicReasoning'].map(name=>getDocsFromServer(collection(db,'trials',context.trialId,name))));
+  if(!current())return;for(const snapshot of [ballots,reviews,copies])requireServerSnapshot(snapshot);
+  const states=Object.fromEntries(reviews.docs.map(item=>[item.id,item.data()])),published=Object.fromEntries(copies.docs.map(item=>[item.id,item.data()]));
+  for(const [index,ballot] of ballots.docs.entries()){
+   const data=ballot.data(),state=states[ballot.id],copy=state&&published[state.publicId];
+   const card=document.createElement('section');card.className='panel';
+   const heading=document.createElement('h3');heading.textContent=`Private review ${index+1} — ${data.choice==='guilty'?'Guilty':data.choice==='not-guilty'?'Not Guilty':'Invalid choice'}`;
+   const original=document.createElement('p');original.textContent='Original private reasoning: '+(data.reason||'');
+   const label=document.createElement('label');label.textContent='Public copy (remove identifying details)';
+   const text=document.createElement('textarea');text.value=copy?.reason||data.reason||'';text.maxLength=2000;text.setAttribute('aria-label',`Reviewed anonymous reasoning ${index+1}`);text.style.width='min(100%, 650px)';text.style.minHeight='100px';label.append(text);
+   const checked=document.createElement('input');checked.type='checkbox';const consent=document.createElement('label');consent.append(checked);const description=document.createElement('span');description.textContent=' I checked this copy for names, codes, contact details and other identifying information, and have permission to share it anonymously.';consent.append(description);
+   const result=document.createElement('p');result.setAttribute('role','status');result.textContent=state?.state==='approved'?'Anonymous copy currently published.':state?.state==='excluded'?'Excluded from public reasoning.':'Not reviewed; private only.';
+   const approve=document.createElement('button'),exclude=document.createElement('button');approve.textContent=copy?'Approve updated anonymous copy':'Approve and publish anonymous copy';exclude.textContent=copy?'Withdraw public copy':'Exclude from publication';approve.type=exclude.type='button';
+   let pending=false;
+   const act=async approved=>{
+    if(!current()||pending)return;
+    if(approved&&checked.checked!==true){result.textContent='Confirm the anonymity review before publishing.';return}
+    if(approved&&!confirm(`Publish this reviewed anonymous copy for ${context.trialId}? Its choice and edited reasoning will be public. No ballot or final tally will change.`))return;
+    if(!current())return;
+    pending=true;approve.disabled=exclude.disabled=true;result.textContent=approved?'Publishing reviewed copy…':'Saving exclusion…';
+    try{
+     await reviewReasoning(approved,text.value,{
+      current,identifiers:[ballot.id,...students.flatMap(student=>[student.id,student.displayName])],
+      newId:()=>doc(collection(db,'trials',context.trialId,'publicReasoning')).id,
+      trial:doc(db,'trials',context.trialId),ballot:doc(db,'trials',context.trialId,'votes',ballot.id),review:doc(db,'trials',context.trialId,'reasoningReviews',ballot.id),
+      publicCopy:id=>doc(db,'trials',context.trialId,'publicReasoning',id),run:callback=>runTransaction(db,callback)
+     });
+     if(!current())return;status(`Anonymous reasoning ${approved?'published':'excluded'} for ${context.trialId}. The ballot and tally are unchanged.`);await loadReasoningReview();
+    }catch(error){if(current()){result.textContent='Review action not confirmed: '+(error.code||error.message)+'. Reload the review panel to verify saved state.';pending=false;approve.disabled=exclude.disabled=false}}
+   };
+   approve.addEventListener('click',()=>act(true));exclude.addEventListener('click',()=>act(false));
+   card.append(heading,original,label,consent,approve,exclude,result);list.append(card);
+  }
+  feedback.textContent=ballots.docs.length?'Review each copy individually. Public labels are trial-specific and do not match this private list order. Excluded copies do not affect turnout or totals.':'No private ballots were found.';
+ }catch(error){if(current())feedback.textContent='Unable to load private reasoning: '+(error.code||error.message)}
+ finally{if(current()){button.disabled=false;feedback.setAttribute('aria-busy','false')}}
+}
+$('load-reasoning').addEventListener('click',loadReasoningReview);

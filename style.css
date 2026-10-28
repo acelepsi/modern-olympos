@@ -824,3 +824,25 @@ a { color: inherit; }
 @media(max-width:600px){
   .dossier .mugshot{width:72px;height:72px;min-width:72px;max-width:72px;min-height:72px;max-height:72px;flex-basis:72px}
 }
+
+/* Completed case file: archive-only contrast and structure, never court overrides. */
+.archive-page{background:#151820;color:#f3eee4;border:1px solid #706044;border-radius:12px;padding:clamp(1rem,3vw,2.25rem);font-family:Inter,system-ui,sans-serif;line-height:1.7}
+.archive-page h1,.archive-page h2,.archive-page h3{font-family:'Cormorant SC',Georgia,serif;color:#e2bf83;line-height:1.25}
+.archive-page h1{font-size:2.2rem}.archive-page h2{font-size:1.65rem}.archive-page p{color:#f3eee4}.archive-page a{color:#e2bf83}
+.archive-page button{background:#e2bf83;color:#151820;border:0;border-radius:6px;font-weight:600}.archive-page button:disabled{opacity:.65}
+.archive-case-heading{padding:1.5rem 0;border-bottom:1px solid #706044;align-items:center}.archive-case-title{min-width:0}.archive-case-title h2{margin:.35rem 0;font-size:clamp(1.5rem,4vw,2.2rem)}
+.archive-page .archive-case-status{color:#d5d0c7;font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;margin:0}
+.archive-verdict-section{margin:1.8rem 0}.archive-verdict{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;border:0;padding:0}
+.archive-total{background:#222631;border:1px solid #706044;border-radius:8px;padding:1rem;text-align:center}.archive-total span{display:block;font-size:.95rem}.archive-total strong{display:block;font-size:2.4rem;line-height:1.2;margin-top:.5rem}
+.archive-total.guilty{border-top:4px solid #b75167;color:#ffc1ce}.archive-total.not-guilty{border-top:4px solid #8795e6;color:#c7d1ff}.archive-total.total{color:#e2bf83}
+.archive-side{min-width:0}.archive-side h2{padding:.6rem 0;border-bottom:3px solid}.archive-side-prosecution h2{color:#ffc1ce;border-color:#b75167}.archive-side-defense h2{color:#c7d1ff;border-color:#8795e6}
+.archive-page .argument-card,.archive-page .reasoning-card{background:#222631;color:#f3eee4;border:1px solid #666252;border-radius:8px;padding:1.1rem 1.25rem;margin:1rem 0;overflow-wrap:anywhere}
+.archive-side-prosecution .argument-card{border-left:4px solid #b75167}.archive-side-defense .argument-card{border-left:4px solid #8795e6}
+.archive-page .archive-alias{color:#e2bf83;font:600 .95rem Inter,system-ui,sans-serif;margin:0 0 .75rem}.archive-page .archive-argument-text,.archive-page .reasoning-text{color:#f3eee4;white-space:pre-wrap;line-height:1.75;margin:.75rem 0}
+.archive-page .archive-note{color:#d5d0c7;font-size:.9rem}.archive-jury{margin-top:2rem;padding-top:1rem;border-top:1px solid #706044}
+.archive-reasoning{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.25rem}.archive-page .reasoning-card{margin:0;min-width:0}
+.archive-page .reasoning-card h3{margin:0 0 .5rem;font-size:1.25rem}.archive-page .reasoning-choice{font-weight:700;margin:.5rem 0}
+.archive-page .reasoning-card.guilty{border-left:4px solid #b75167}.archive-page .reasoning-card.guilty .reasoning-choice{color:#ffc1ce}
+.archive-page .reasoning-card.not-guilty{border-left:4px solid #8795e6}.archive-page .reasoning-card.not-guilty .reasoning-choice{color:#c7d1ff}
+#archive-browser #archive-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}#archive-browser #archive-list a{height:100%;padding:.8rem;border:1px solid #706044;border-radius:8px;box-sizing:border-box;background:#222631;margin:0}
+@media(max-width:720px){.archive-reasoning,#archive-browser #archive-list{grid-template-columns:1fr}.archive-verdict{gap:.4rem}.archive-total{padding:.65rem .35rem}.archive-total strong{font-size:1.9rem}.archive-total span{font-size:.82rem}}

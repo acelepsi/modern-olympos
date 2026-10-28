@@ -34,13 +34,13 @@ function archive(search='?trial=closed-case'){
  {data:()=>({status:'draft',section:'prosecution',text:'PRIVATE DRAFT'})},
  {data:()=>({status:'pending',section:'defense',text:'PRIVATE PENDING'})}
  ]}},console};
- vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'archive.js'),'utf8').replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\n/gm,''),context);
+ vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'archive.js'),'utf8').replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\n/gm,''),context);
  return {context,get,calls,run:code=>vm.runInContext(code,context)};
 }
 test('archive renders closed trials, published arguments and valid tally without querying private votes or profiles',async()=>{
  const h=archive();await h.run('loadArchive()');
  assert.equal(h.get('archive-list').children.length,1);assert.equal(h.get('archive-title').textContent,'Loki');assert.equal(h.get('archive-detail').hidden,false);
- assert.match(h.get('archive-verdict').textContent,/Guilty: 2; Not Guilty: 1/);
+ assert.equal(h.get('archive-verdict').children[0].children[1].textContent,'2');assert.equal(h.get('archive-verdict').children[1].children[1].textContent,'1');
  const content=JSON.stringify([...['archive-prosecution','archive-defense'].map(id=>h.get(id).children)]);
  assert.match(content,/Approved prosecution/);assert.match(content,/Approved defense/);assert.doesNotMatch(content,/PRIVATE|javascript:/);
  assert.ok(h.calls.every(call=>!JSON.stringify(call).match(/votes|students|assignments/)));
@@ -90,4 +90,21 @@ test('archive renders optional portraits in thumbnails/detail and retains legacy
  assert.equal(h.get('archive-portrait').children[0].src,'https://images.example/athena.jpg');
  const thumbnail=h.get('archive-list').children[0].children[0].children[0];assert.equal(thumbnail.children[0].src,'https://images.example/athena.jpg');
  thumbnail.children[0].onerror();assert.equal(thumbnail.textContent,'Ω');assert.equal(h.get('archive-detail').hidden,false);
+});
+test('public reasoning displays only choice/text with anonymous trial labels and no metadata',()=>{
+ const h=archive('');h.context.docs=[{id:'RandomPublicCopyAAAAA',data:()=>({choice:'guilty',reason:'A sufficiently detailed approved reason.'})},{id:'RandomPublicCopyBBBBB',data:()=>({choice:'not-guilty',reason:'A second sufficiently detailed reason.'})},{id:'bad',data:()=>({choice:'guilty',reason:'Must not render private identifiers.',authorUid:'PRIVATE-UID',castAt:'PRIVATE-TIME'})}];
+ h.run('renderReasoningCards(docs)');const list=h.get('archive-reasoning');assert.equal(list.children.length,2);assert.equal(list.children[0].children[0].textContent,'Juror #1');assert.equal(list.children[1].children[0].textContent,'Juror #2');assert.equal(list.children[1].children[1].textContent,'Not Guilty');assert.doesNotMatch(JSON.stringify(list.children),/PRIVATE|RandomPublicCopy/);
+});
+test('legacy finished trial has an honest empty state without automatically copying historical ballots',async()=>{
+ const h=archive();h.context.getDocsFromServer=async ref=>{h.calls.push(ref);return {docs:[]}};await h.run("loadPublicReasoning({id:'old-case',status:'closed',verdictSummary:{guilty:1,notGuilty:0}},()=>true)");
+ assert.match(h.get('archive-reasoning').textContent,/No jury justifications/);assert.ok(h.calls.every(call=>!JSON.stringify(call).match(/votes|students|reasoningReviews/)));
+});
+test('closed trial without final tally never requests public reasoning',async()=>{
+ const h=archive('');await h.run('loadArchive()');let reads=0;h.context.getDocsFromServer=async()=>{reads++;return {docs:[]}};await h.run("loadPublicReasoning({id:'old-case',status:'closed'},()=>true)");assert.equal(reads,0);assert.match(h.get('archive-reasoning').textContent,/after the final jury tally/);
+});
+test('reasoning read failures do not expose private fallbacks or hide approved arguments',async()=>{
+ const h=archive('');await h.run('loadArchive()');h.context.getDocsFromServer=async()=>{throw Error('permission-denied')};await h.run("loadPublicReasoning({id:'old-case',status:'closed',verdictSummary:{guilty:1,notGuilty:0}},()=>true)");assert.match(h.get('archive-reasoning').textContent,/could not be loaded/);
+});
+test('case view hides duplicate archive overview and exposes a return link',async()=>{
+ const h=archive();await h.run('loadArchive()');assert.equal(h.get('archive-browser').hidden,true);assert.equal(h.get('archive-back').hidden,false);
 });

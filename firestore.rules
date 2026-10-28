@@ -54,6 +54,37 @@ service cloud.firestore {
         request.resource.data.verdictSummary.notGuilty is int && request.resource.data.verdictSummary.notGuilty >= 0 &&
         request.resource.data.verdictSummary.guilty + request.resource.data.verdictSummary.notGuilty > 0));
    allow delete: if false;
+   // Only anonymous copies are public; original ballots and review mappings stay private.
+   function reasoningReleased() {
+    let trial = get(/databases/$(database)/documents/trials/$(trialId)).data;
+    return trial.status == 'closed' && 'verdictSummary' in trial
+      && trial.verdictSummary.guilty is int && trial.verdictSummary.guilty >= 0
+      && trial.verdictSummary.notGuilty is int && trial.verdictSummary.notGuilty >= 0
+      && trial.verdictSummary.guilty + trial.verdictSummary.notGuilty > 0;
+   }
+   match /publicReasoning/{publicId} {
+    function validCopy() { return publicId.matches('^[A-Za-z0-9]{20}$')
+      && request.resource.data.keys().hasOnly(['choice','reason'])
+      && request.resource.data.choice in ['guilty','not-guilty']
+      && request.resource.data.reason is string && request.resource.data.reason.trim().size() >= 15
+      && request.resource.data.reason.size() <= 2000 && !request.resource.data.reason.matches('(?s).*@.*'); }
+    allow read: if reasoningReleased();
+    allow create: if admin() && reasoningReleased() && validCopy();
+    allow update: if admin() && reasoningReleased() && validCopy()
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reason']);
+    allow delete: if admin() && reasoningReleased();
+   }
+   match /reasoningReviews/{uid} {
+    allow read: if admin();
+    allow create, update: if admin() && reasoningReleased()
+      && exists(/databases/$(database)/documents/trials/$(trialId)/votes/$(uid))
+      && request.resource.data.keys().hasOnly(['state','publicId'])
+      && request.resource.data.state in ['approved','excluded']
+      && request.resource.data.publicId is string && request.resource.data.publicId.matches('^[A-Za-z0-9]{20}$')
+      && (!exists(/databases/$(database)/documents/trials/$(trialId)/reasoningReviews/$(uid))
+        || request.resource.data.publicId == resource.data.publicId);
+    allow delete: if false;
+   }
    match /votes/{uid} {
     function eligible() { return request.auth != null && request.auth.uid == uid
       && exists(/databases/$(database)/documents/students/$(uid))

@@ -37,7 +37,7 @@ function harness(file) {
     initializeApp: () => ({}), getAuth: () => auth, getFirestore: () => ({}),
     onAuthStateChanged: (_, fn) => authCallbacks.push(user => { auth.currentUser = user; return fn(user); }),
     onSnapshot: (ref, next, error) => { const sub = { ref, next, error }; snapshots.push(sub); return () => { sub.stopped = true; }; },
-    doc: (...args) => args.slice(1), collection: (...args) => args.slice(1), query: () => ({}), where: () => ({}),
+    doc: (...args) => args.length===1?{id:"ABCDEFGHIJKLMNOPQRST"}:args.slice(1), collection: (...args) => args.slice(1), query: () => ({}), where: () => ({}),
     getDoc: async () => ({ exists: () => false }), getDocs: async () => ({ docs: [] }),
     getDocFromServer: async (...args) => ({ metadata: { fromCache: false, hasPendingWrites: false }, ...await c.getDoc(...args) }),
     getDocsFromServer: async (...args) => { const result = await c.getDocs(...args); return { metadata: { fromCache: false, hasPendingWrites: false }, size: result.docs.length, ...result }; },
@@ -49,6 +49,7 @@ function harness(file) {
     setTimeout() {}, queueMicrotask() {}, console, URL,
   };
   vm.createContext(c);
+  vm.runInContext(fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,''),c);
   vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),c);
   const accountModule=fs.readFileSync(path.join(root,'student-accounts.js'),'utf8').replace(/^export /gm,'');
   vm.runInContext(accountModule,c);
@@ -867,4 +868,39 @@ test('new trial and sign-out clear the portrait editor context',async()=>{
 });
 test('court renders trial portrait and restores Ω while another trial loads',()=>{
  const h=harness('app.js'),pointer=h.snapshots.find(sub=>sub.ref.join('/')==='settings/currentTrial');pointer.next({exists:()=>true,data:()=>({trialId:'case-a'})});const trial=h.snapshots.find(sub=>sub.ref.join('/')==='trials/case-a');trial.next({exists:()=>true,data:()=>({title:'Athena',status:'trial',portraitUrl:'https://images.example/athena.jpg'})});assert.equal(h.get('mugshot').children[0].src,'https://images.example/athena.jpg');pointer.next({exists:()=>true,data:()=>({trialId:'case-b'})});assert.equal(h.get('mugshot').textContent,'Ω');assert.equal(h.get('mugshot').children.length,0);
+});
+
+async function reasoningAdmin(){
+ const h=await adminTrials();
+ h.c.getDoc=async()=>snapshot({status:'closed',verdictSummary:{guilty:1,notGuilty:0}});
+ h.c.getDocs=async ref=>({docs:ref[ref.length-1]==='votes'?[{id:'private-juror',data:()=>({choice:'guilty',reason:'A private reason supported by the arguments.',castAt:'private-time'})}]:[]});
+ await h.get('load-reasoning').handlers.click();return h;
+}
+test('loading historical private reasoning never publishes and requires individual confirmation',async()=>{
+ const h=await reasoningAdmin();let transactions=0;h.c.runTransaction=async()=>{transactions++};
+ const card=h.get('reasoning-review-list').children[0];assert.ok(card);await card.children[4].handlers.click();
+ assert.equal(transactions,0);assert.match(card.children[6].textContent,/Confirm the anonymity review/);
+});
+test('confirmed administrator approval copies only redacted text and immutable choice',async()=>{
+ const h=await reasoningAdmin(),writes=[];
+ h.c.runTransaction=async(_,callback)=>callback({get:async ref=>snapshot(ref[2]==='votes'?{choice:'guilty',reason:'Original private reason',castAt:'secret'}:ref[2]==='reasoningReviews'?null:{status:'closed',verdictSummary:{guilty:1,notGuilty:0}}),set:(ref,data)=>writes.push({ref,data}),delete:()=>{throw Error('Unexpected delete')}});
+ const card=h.get('reasoning-review-list').children[0];card.children[2].children[0].value='A reviewed explanation with all identifiers removed.';card.children[3].children[0].checked=true;
+ await card.children[4].handlers.click();
+ assert.equal(writes[0].ref[2],'publicReasoning');assert.deepEqual(Object.keys(writes[0].data).sort(),['choice','reason']);assert.equal(writes[0].data.choice,'guilty');assert.equal(writes[0].data.reason,'A reviewed explanation with all identifiers removed.');
+ assert.equal(writes[1].ref[2],'reasoningReviews');assert.ok(!writes.some(write=>write.ref[2]==='votes'||write.ref.length===2));
+});
+test('cancelled approval and duplicate clicks cannot submit public copies',async()=>{
+ const h=await reasoningAdmin(),wait=deferred();let transactions=0;
+ const card=h.get('reasoning-review-list').children[0];card.children[3].children[0].checked=true;h.c.confirm=()=>false;h.c.runTransaction=async()=>{transactions++;return wait.promise};
+ await card.children[4].handlers.click();assert.equal(transactions,0);h.c.confirm=()=>true;
+ const pending=card.children[4].handlers.click();await card.children[4].handlers.click();assert.equal(transactions,1);wait.resolve();await pending;
+});
+test('failed reasoning commits preserve a visible unconfirmed state and editable copy',async()=>{
+ const h=await reasoningAdmin(),card=h.get('reasoning-review-list').children[0];card.children[3].children[0].checked=true;h.c.runTransaction=async()=>{throw Error('Synthetic offline commit')};await card.children[4].handlers.click();
+ assert.match(card.children[6].textContent,/not confirmed/);assert.equal(card.children[4].disabled,false);assert.equal(card.children[2].children[0].value,'A private reason supported by the arguments.');
+});
+test('private reasoning is cleared on sign-out and stale trial reads cannot render',async()=>{
+ const h=await reasoningAdmin();assert.equal(h.get('reasoning-review-list').children.length,1);await h.authCallbacks[0](null);assert.equal(h.get('reasoning-review-list').children.length,0);
+ const other=await adminTrials(),wait=deferred();other.c.getDoc=async()=>wait.promise;const pending=other.get('load-reasoning').handlers.click();other.get('trial-select').value='case-b';await other.get('trial-select').handlers.change();
+ wait.resolve(snapshot({status:'closed',verdictSummary:{guilty:1,notGuilty:0}}));await pending;assert.equal(other.get('reasoning-review-list').children.length,0);assert.match(other.get('reasoning-review-status').textContent,/Load private reasoning/);
 });
