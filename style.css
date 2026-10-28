@@ -890,7 +890,7 @@ a { color: inherit; }
 .dialog-actions [data-confirm-submit]{background:#d9b871;color:#221f1c;font-weight:700}
 @media(max-width:600px){
  .dossier{padding:20px 16px;gap:16px;align-items:flex-start}
- .trial-progress{padding:.8rem .5rem}.trial-progress ol{gap:1rem}.trial-progress li{padding:.5rem .3rem;gap:.3rem;font-size:.9rem}.trial-progress .phase-number{flex-basis:1.4rem;height:1.4rem}.trial-progress small{font-size:.72rem}.trial-progress li:not(:last-child)::after{right:-.95rem}
+ .trial-progress{padding:.8rem .5rem}.trial-progress ol{gap:1rem}.trial-progress li{padding:.5rem .3rem;gap:.3rem;font-size:.9rem;flex-direction:column;text-align:center}.trial-progress .phase-number{flex-basis:1.4rem;width:1.4rem;height:1.4rem}.trial-progress small{font-size:.72rem}.trial-progress li:not(:last-child)::after{right:-.95rem;top:50%;transform:translateY(-50%)}
  .court-dialog{padding:1rem}.dialog-actions button{flex:1}
 }
 @media(prefers-reduced-motion:reduce){.trial-room *{scroll-behavior:auto!important}}
