@@ -1,6 +1,7 @@
-import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
-import {getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import {getFirestore,connectFirestoreEmulator,collection,query,where,getDocsFromServer} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import {chronologicalSubmissions} from './case-content.js';
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js';
+import {getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js';
+import {getFirestore,connectFirestoreEmulator,collection,query,where,getDocsFromServer} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
 import {initializeFirebaseClient} from './firebase-client.js';
 import {renderPortrait} from './portraits.js';
 import {reasoningReleased} from './jury-reasoning.js';
@@ -56,11 +57,11 @@ async function loadArchive(){
   const trial=trials.find(item=>item.id===selected);
   if(!trial){$('archive-status').textContent='That completed trial is unavailable. Choose one of the listed cases.';return}
   $('archive-browser').hidden=true;$('archive-back').hidden=false;
-  renderPortrait($('archive-portrait'),trial.portraitUrl,`Portrait for ${trial.title||trial.id}`);$('archive-title').textContent=trial.title||trial.id;$('archive-info').textContent=typeof trial.charge==='string'?trial.charge:'';
+  renderPortrait($('archive-portrait'),trial.portraitUrl,`Portrait for ${trial.title||trial.id}`);$('archive-title').textContent=trial.title||trial.id;$('archive-info').textContent=typeof trial.charge==='string'?trial.charge:'';$('archive-info').hidden=!$('archive-info').textContent;
   $('archive-status').textContent='Loading published arguments…';
   const submissions=await getDocsFromServer(query(collection(db,'trials',trial.id,'submissions'),where('status','==','published')));if(!current())return;
   const feeds={prosecution:$('archive-prosecution'),defense:$('archive-defense')};for(const feed of Object.values(feeds))feed.replaceChildren();
-  for(const item of submissions.docs){const post=item.data();if(post.status==='published'&&feeds[post.section])renderArgument(feeds[post.section],post)}
+  for(const post of chronologicalSubmissions(submissions.docs)){if(post.status==='published'&&feeds[post.section])renderArgument(feeds[post.section],post)}
   for(const feed of Object.values(feeds))if(!feed.children.length)feed.textContent='No published arguments for this side.';
   renderTally(trial.verdictSummary);$('archive-detail').hidden=false;await loadPublicReasoning(trial,current);if(!current())return;
   $('archive-status').textContent='Completed trial. Published arguments and teacher-approved anonymous reasoning are shown. Original ballots and identities remain private.';

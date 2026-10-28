@@ -180,8 +180,8 @@ test('whitespace-only arguments cannot bypass UI trimming', async () => {
   await assertFails(setDoc(ref('prosecutor', 'trials/case-a/submissions/blank'), submission({ text: ' \n\t ' })));
   await assertFails(updateDoc(ref('prosecutor', 'trials/case-a/submissions/draft'), { text: '   ' }));
 });
-test('mixed-case HTTP(S) evidence URLs accepted by UI are accepted by rules', async () => {
-  for (const scheme of ['http', 'https', 'HTTP', 'HtTpS']) await assertSucceeds(setDoc(ref('prosecutor', `trials/case-a/submissions/link-${scheme}`), submission({ evidenceUrl: `${scheme}://example.org/source` })));
+test('mixed-case HTTPS evidence URLs accepted by UI are accepted by rules', async () => {
+  for (const scheme of ['https', 'HtTpS']) await assertSucceeds(setDoc(ref('prosecutor', `trials/case-a/submissions/link-${scheme}`), submission({ evidenceUrl: `${scheme}://example.org/source` })));
 });
 test('owner draft/returned revision flow works without changing protected fields', async () => {
   for (const fields of [{ authorUid: 'defender' }, { section: 'defense' }, { authorName: 'Impostor' }, { createdAt: serverTimestamp() }, { trialId: 'case-b' }, { status: 'published' }, { feedback: 'Invented' }]) await assertFails(updateDoc(ref('prosecutor', 'trials/case-a/submissions/draft'), fields));
@@ -584,4 +584,42 @@ test('previously completed trials need no migration and reasoning is never auto-
  await seedReasoning();assert.equal((await assertSucceeds(getDocs(collection(db(null),'trials/reason-case/publicReasoning')))).size,0);
  await assertFails(updateDoc(ref(ADMIN,'trials/reason-case'),{status:'verdict'}));await assertFails(updateDoc(ref(ADMIN,'trials/reason-case'),{verdictSummary:{guilty:99,notGuilty:0}}));
  await assertFails(updateDoc(ref(ADMIN,'trials/reason-case/votes/juror'),{reason:'Rewritten ballot must never be allowed.'}));
+});
+
+// Optional public case description: no lifecycle or privilege expansion.
+for(const charge of ['', 'A supported charge.', 'x'.repeat(2000)])test('administrator can create/edit optional charge '+charge.length,async()=>{
+ await assertSucceeds(setDoc(ref(ADMIN,'trials/charge-case'),{title:'Case',status:'trial',charge}));
+ await assertSucceeds(updateDoc(ref(ADMIN,'trials/case-a'),{charge}));
+});
+for(const charge of [null,42,{},'x'.repeat(2001)])test('invalid charge denied on create/update '+typeof charge,async()=>{
+ await assertFails(setDoc(ref(ADMIN,'trials/charge-case'),{title:'Case',status:'trial',charge}));
+ await assertFails(updateDoc(ref(ADMIN,'trials/case-a'),{charge}));
+});
+for(const uid of [null,'prosecutor','juror','other-teacher'])test(`${uid||'public'} cannot change charge metadata`,async()=>{
+ await assertFails(updateDoc(ref(uid,'trials/case-a'),{charge:'Unauthorized'}));
+ await assertFails(setDoc(ref(uid,'trials/charge-case'),{title:'Case',status:'trial',charge:'Unauthorized'}));
+});
+test('charge preserves legacy fields, permanent closure and immutable published tally',async()=>{
+ await seed({'trials/charge-closed':{title:'Case',status:'closed',verdictSummary:{guilty:1,notGuilty:0}}});
+ await assertSucceeds(updateDoc(ref(ADMIN,'trials/charge-closed'),{charge:'Clarified description'}));
+ await assertFails(updateDoc(ref(ADMIN,'trials/charge-closed'),{charge:'Reopen',status:'verdict'}));
+ await assertFails(updateDoc(ref(ADMIN,'trials/charge-closed'),{charge:'Replace tally',verdictSummary:{guilty:0,notGuilty:3}}));
+ await assertSucceeds(updateDoc(ref(ADMIN,'trials/case-a'),{title:'Legacy title edit'}));assert.equal('charge' in (await getDoc(ref(ADMIN,'trials/case-a'))).data(),false);
+});
+for(const evidenceUrl of ['http://example.org/source','HTTP://example.org/source','https://','https://bad host/source','https://user:pass@example.org/source'])test('new insecure/malformed evidence denied '+evidenceUrl,async()=>{
+ await assertFails(setDoc(ref('prosecutor','trials/case-a/submissions/new-link'),submission({evidenceUrl})));
+ await assertFails(updateDoc(ref('prosecutor','trials/case-a/submissions/draft'),{evidenceUrl}));
+});
+test('legacy HTTP draft can be revised/resubmitted unchanged, upgraded or cleared, but not replaced by HTTP',async()=>{
+ const path='trials/case-a/submissions/legacy-http';await seed({[path]:storedSubmission({evidenceUrl:'http://example.org/original'})});
+ await assertSucceeds(updateDoc(ref('prosecutor',path),{text:'Revised supported argument.'}));
+ await assertFails(updateDoc(ref('prosecutor',path),{evidenceUrl:'http://example.org/new'}));
+ await assertSucceeds(updateDoc(ref('prosecutor',path),{evidenceUrl:'https://example.org/secure'}));
+ await assertFails(updateDoc(ref('prosecutor',path),{evidenceUrl:'http://example.org/original'}));
+ await assertSucceeds(updateDoc(ref('prosecutor',path),{evidenceUrl:''}));
+ await seed({[path]:storedSubmission({evidenceUrl:'http://example.org/original',status:'returned',feedback:'Revise'})});
+ await assertSucceeds(updateDoc(ref('prosecutor',path),{status:'pending',feedback:'',text:'Revised argument.'}));
+ await assertSucceeds(updateDoc(ref(ADMIN,path),{status:'published',feedback:''}));
+ const visible=await assertSucceeds(getDoc(ref(null,path)));assert.equal(visible.data().evidenceUrl,'http://example.org/original');
+ await assertFails(updateDoc(ref('prosecutor',path),{text:'Tampered published text'}));
 });

@@ -1,32 +1,25 @@
+import {chronologicalSubmissions,validEvidence} from './case-content.js';
 // =================================================================
 // MODERN OLYMPOS — app.js (public-first, modal-login)
 // =================================================================
-// Key change from v1: NOTHING here blocks page render. The Trial
-// Room markup is visible immediately to any visitor. Firebase Auth
-// is only ever touched when someone actually submits the login
-// modal — there is no more silent signInAnonymously() on load.
-//
-// If a visitor previously logged in on this browser, Firebase Auth
-// persists that anonymous identity across reloads on its own, so
-// onAuthStateChanged() below will still pick them back up and
-// restore their signed-in UI automatically — no action needed from
-// us to make that happen.
-// =================================================================
+// Public content is visible before login. Student code/password sign-in uses
+// Firebase Authentication; persisted sessions are restored by onAuthStateChanged.
+// No anonymous account is created on page load.
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
 import {
   getAuth, initializeAuth, inMemoryPersistence, connectAuthEmulator,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
 import {
   getFirestore, connectFirestoreEmulator,
   doc,
   getDoc,
   onSnapshot,
   collection, addDoc, updateDoc, setDoc, query, where, serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 
 import { initializeFirebaseClient } from './firebase-client.js';
 import { renderPortrait } from './portraits.js';
@@ -145,6 +138,8 @@ function clearPrivateContext() {
   retryBallot.hidden = true;
   if (stopMine) stopMine();
   stopMine = null;
+  mineContext = null;
+  mineRevision++;
   mySubmissions = [];
   document.getElementById('my-submissions').hidden = true;
   document.getElementById('my-submissions-list').replaceChildren();
@@ -200,13 +195,15 @@ onAuthStateChanged(auth, (user) => {
   currentProfile = null;
   currentAssignment = null;
   applySession(null);
+  refreshSubmissionListeners();
   document.getElementById("account-status").textContent=user?"Loading your account…":"";
   if (!user) return;
   unsubscribeProfile = onSnapshot(doc(db, "students", user.uid), snap => {
     if (revision !== authRevision) return;
     currentProfile = snap.exists() ? snap.data() : null;
     renderIdentity();
-  }, err => { if (revision !== authRevision) return; currentProfile=null;clearPrivateContext();applySession(null);document.getElementById("account-status").textContent="Unable to read your student access. Try signing out and signing in again, or ask your teacher."; });
+    refreshSubmissionListeners();
+  }, err => { if (revision !== authRevision) return; currentProfile=null;clearPrivateContext();applySession(null);refreshSubmissionListeners();document.getElementById("account-status").textContent="Unable to read your student access. Try signing out and signing in again, or ask your teacher."; });
   // The active trial is resolved independently below. It may change while signed in.
   subscribeAssignmentForActiveTrial(user, revision);
 
@@ -250,7 +247,7 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
   const title = document.getElementById("defendant-name");
   const charge = document.getElementById("defendant-charge");
   if (title) title.textContent = activeTrialId ? "Loading trial…" : "No active trial";
-  if (charge) charge.textContent = "";
+  if (charge) {charge.textContent = "";charge.hidden=true;}
   renderPortrait(document.getElementById("mugshot"),null);
   setTrialStatus("closed");
   if (activeTrialId) {
@@ -268,12 +265,13 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
       renderPublicVerdict();
       if (title) title.textContent = data.title || activeTrialId;
       renderPortrait(document.getElementById("mugshot"),data.portraitUrl,`Portrait for ${data.title||activeTrialId}`);
-      if (charge) charge.textContent = data.charge || "";
+      if (charge) {charge.textContent = typeof data.charge==='string'?data.charge:"";charge.hidden=!charge.textContent;}
       setTrialStatus(data.status || "closed");
       refreshMyVote();
     }, err => { if (revision !== trialRevision)return;clearPrivateContext();renderPortrait(document.getElementById("mugshot"),null);currentTrial.verdictSummary=null;setTrialStatus("closed");document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
   }
   subscribeAssignmentForActiveTrial(auth.currentUser, authRevision);
+  refreshSubmissionListeners();
 }, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();renderPortrait(document.getElementById("mugshot"),null);activeTrialId=null;currentTrial.verdictSummary=null;setTrialStatus("closed");refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
 
 function renderIdentity() {
@@ -440,10 +438,10 @@ el.juryVoteForm.addEventListener('submit', async (e) => {
 
 // -----------------------------------------------------------------
 // v5: case-scoped, moderated submissions.
-let stopPublished = null, stopMine = null, submissionRevision = 0;
+let stopPublished = null, stopMine = null, publishedRevision = 0, mineRevision = 0;
+let publishedTrial = null, mineContext = null;
 const pendingSubmissionSaves=new Set();
 let mySubmissions = [];
-function submissionCollection() { return collection(db, 'trials', activeTrialId, 'submissions'); }
 function renderPost(container, data) {
   const article=document.createElement('article');article.className='argument-card';
   const meta=document.createElement('div');meta.className='meta';
@@ -475,25 +473,29 @@ function renderMine(){
  }
 }
 function refreshSubmissionListeners(){
- const request=++submissionRevision;
- if(stopPublished)stopPublished();if(stopMine)stopMine();stopPublished=stopMine=null;mySubmissions=[];renderMine();
- for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').replaceChildren();
- if(!activeTrialId)return;
- const trialAtSubscribe=activeTrialId;
- stopPublished=onSnapshot(query(submissionCollection(),where('status','==','published')),snap=>{
-  if(request!==submissionRevision||trialAtSubscribe!==activeTrialId)return;
-  const feeds={prosecution:document.getElementById('prosecution-feed'),defense:document.getElementById('defense-feed')};
-  for(const feed of Object.values(feeds))feed.replaceChildren();
-  for(const item of snap.docs){const post=item.data();if(feeds[post.section])renderPost(feeds[post.section],post)}
-  for(const feed of Object.values(feeds))if(!feed.children.length)feed.textContent='No approved submissions yet.';
- },err=>{if(request!==submissionRevision||trialAtSubscribe!==activeTrialId)return;for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').textContent='Unable to load published arguments. Reload to retry.';});
- const user=auth.currentUser;
- if(user&&currentProfile?.active===true&&currentProfile?.accountType==='student'){
-  stopMine=onSnapshot(query(submissionCollection(),where('authorUid','==',user.uid)),snap=>{
-   if(request!==submissionRevision||trialAtSubscribe!==activeTrialId||auth.currentUser?.uid!==user.uid)return;
-   mySubmissions=snap.docs.map(x=>({id:x.id,...x.data()}));renderMine();
-  },err=>{if(request!==submissionRevision||trialAtSubscribe!==activeTrialId||auth.currentUser?.uid!==user.uid)return;mySubmissions=[];renderMine();document.getElementById('my-submissions-list').textContent='Unable to load your submissions. Reload to retry.';});
+ const trial=activeTrialId;
+ // Public access depends only on the trial, not identity or role rendering.
+ if(publishedTrial!==trial){
+  publishedTrial=trial;const request=++publishedRevision;
+  if(stopPublished)stopPublished();stopPublished=null;
+  for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').replaceChildren();
+  if(trial)stopPublished=onSnapshot(query(collection(db,'trials',trial,'submissions'),where('status','==','published')),snap=>{
+   if(request!==publishedRevision||trial!==activeTrialId)return;
+   const feeds={prosecution:document.getElementById('prosecution-feed'),defense:document.getElementById('defense-feed')};
+   for(const feed of Object.values(feeds))feed.replaceChildren();
+   for(const post of chronologicalSubmissions(snap.docs))if(feeds[post.section])renderPost(feeds[post.section],post);
+   for(const feed of Object.values(feeds))if(!feed.children.length)feed.textContent='No approved submissions yet.';
+  },err=>{if(request!==publishedRevision||trial!==activeTrialId)return;for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').textContent='Unable to load published arguments. Reload to retry.';});
  }
+ const uid=auth.currentUser?.uid;
+ const key=trial&&uid&&currentProfile?.active===true&&currentProfile?.accountType==='student'?JSON.stringify([trial,uid]):null;
+ if(key===mineContext)return;
+ mineContext=key;const request=++mineRevision;
+ if(stopMine)stopMine();stopMine=null;mySubmissions=[];renderMine();
+ if(key)stopMine=onSnapshot(query(collection(db,'trials',trial,'submissions'),where('authorUid','==',uid)),snap=>{
+  if(request!==mineRevision||trial!==activeTrialId||auth.currentUser?.uid!==uid)return;
+  mySubmissions=snap.docs.map(x=>({id:x.id,...x.data()}));renderMine();
+ },err=>{if(request!==mineRevision||trial!==activeTrialId||auth.currentUser?.uid!==uid)return;mySubmissions=[];renderMine();document.getElementById('my-submissions-list').textContent='Unable to load your submissions. Reload to retry.';});
 }
 for(const side of ['prosecution','defense']){
  const form=document.getElementById(side+'-composer');
@@ -505,7 +507,8 @@ for(const side of ['prosecution','defense']){
   if(!user||!activeTrialId||currentTrial.status!=='trial'||currentProfile?.active!==true||currentProfile?.accountType!=='student'||currentAssignment?.role!==(side==='prosecution'?'prosecutor':'defender')){feedback.textContent='You cannot submit in this trial or role.';return}
   const body=form.querySelector('textarea').value.trim(),link=form.querySelector('input[type=url]').value.trim();
   if(!body||body.length>5000){feedback.textContent='Please enter between 1 and 5000 characters.';return}
-  if(link&&(!/^https?:\/\//i.test(link)||link.length>1000)){feedback.textContent='Evidence must be an http(s) URL under 1000 characters.';return}
+  const original=form.dataset.editId?mySubmissions.find(post=>post.id===form.dataset.editId):null;
+  if(!validEvidence(link,original?.evidenceUrl)){feedback.textContent='New or changed evidence must be a valid HTTPS URL of at most 1000 characters.';return}
   pendingSubmissionSaves.add(saveKey);
   const buttons=[...form.querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);
   try{
@@ -522,9 +525,3 @@ for(const side of ['prosecution','defense']){
  form.addEventListener('submit',e=>{e.preventDefault();return save('pending')});
  form.querySelector('[data-action=draft]').addEventListener('click',()=>save('draft'));
 }
-// Reconnect when the active case, signed-in user or profile changes.
-onSnapshot(doc(db,'settings','currentTrial'),()=>queueMicrotask(refreshSubmissionListeners));
-onAuthStateChanged(auth,()=>queueMicrotask(refreshSubmissionListeners));
-// Profile may arrive after auth, so observe it separately.
-const previousRenderIdentity=renderIdentity;
-renderIdentity=function(){previousRenderIdentity();refreshSubmissionListeners();};
