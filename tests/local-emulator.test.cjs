@@ -71,13 +71,13 @@ test('real administrator can publish and withdraw an anonymous copy without expo
  const trialRef=ref('admin','trials/local-published'),ballotRef=ref('admin',`trials/local-published/votes/${jurorId}`);
  const originalVote=(await storeSdk.getDoc(ballotRef)).data(),originalTally=(await storeSdk.getDoc(trialRef)).data().verdictSummary;
  const api={current:()=>true,identifiers:accounts.map(a=>a.uid),newId:()=>publicId,trial:trialRef,ballot:ballotRef,review:ref('admin',`trials/local-published/reasoningReviews/${jurorId}`),publicCopy:id=>ref('admin',`trials/local-published/publicReasoning/${id}`),run:callback=>storeSdk.runTransaction(admin.db,callback)};
- await Promise.all([reviewReasoning(true,'An approved anonymous explanation for the public archive.',api),reviewReasoning(true,'An approved anonymous explanation for the public archive.',{...api,newId:()=>storeSdk.doc(storeSdk.collection(admin.db,'trials/local-published/publicReasoning')).id})]);
+ try{await Promise.all([reviewReasoning(true,'An approved anonymous explanation for the public archive.',api),reviewReasoning(true,'An approved anonymous explanation for the public archive.',{...api,newId:()=>storeSdk.doc(storeSdk.collection(admin.db,'trials/local-published/publicReasoning')).id})]);}catch(error){error.message='Concurrent approval: '+error.message;throw error}
  publicId=(await storeSdk.getDoc(api.review)).data().publicId;assert.equal((await storeSdk.getDocs(storeSdk.collection(admin.db,'trials/local-published/publicReasoning'))).size,1);
  const anonymousApp=appSdk.initializeApp({projectId:PROJECT,apiKey:'demo-only-not-a-real-api-key'},'anonymous-reasoning-reader');apps.push(anonymousApp);
  const anonymousDb=storeSdk.getFirestore(anonymousApp);storeSdk.connectFirestoreEmulator(anonymousDb,'127.0.0.1',8080);
  const result=await storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/publicReasoning/${publicId}`));assert.deepEqual(Object.keys(result.data()).sort(),['choice','reason']);
  await assert.rejects(storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/votes/${jurorId}`)),error=>error.code==='permission-denied');
  await assert.rejects(storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/reasoningReviews/${jurorId}`)),error=>error.code==='permission-denied');
- await reviewReasoning(false,'',api);assert.equal((await storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/publicReasoning/${publicId}`))).exists(),false);
+ try{await reviewReasoning(false,'',api);}catch(error){error.message='Withdrawal: '+error.message;throw error}assert.equal((await storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/publicReasoning/${publicId}`))).exists(),false);
  assert.deepEqual((await storeSdk.getDoc(ballotRef)).data(),originalVote);assert.deepEqual((await storeSdk.getDoc(trialRef)).data().verdictSummary,originalTally);
 });

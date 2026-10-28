@@ -37,3 +37,12 @@ test('context changes during reads cancel all writes',async()=>{
 test('publication failure propagates rather than reporting success',async()=>{
  const h=harness({run:async()=>{throw Error('Synthetic commit failure')}});await assert.rejects(c.reviewReasoning(true,'A reviewed anonymous explanation.',h.api),/commit failure/);
 });
+test('racing first approval rereads the winning private reference once without weakening permissions',async()=>{
+ const h=harness();let attempts=0;
+ h.api.run=async callback=>{
+  attempts++;const result=await callback({get:async ref=>snap(h.data[ref]),set:(ref,payload)=>h.writes.push({ref,payload}),delete(){}});
+  if(attempts===1){h.writes.length=0;h.data.review={state:'approved',publicId:'ZYXWVUTSRQPONMLKJIHG'};const error=Error('Stale first reference');error.code='permission-denied';throw error}
+  return result;
+ };
+ await c.reviewReasoning(true,'A reviewed anonymous explanation.',h.api);assert.equal(attempts,2);assert.equal(h.writes[0].ref,'public/ZYXWVUTSRQPONMLKJIHG');
+});
