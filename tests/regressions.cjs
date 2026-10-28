@@ -14,6 +14,7 @@ function element(textContent = '') {
     hidden: false, value: '', textContent, dataset: {}, attributes: {}, handlers: {}, children: [], style: {},
     classList: { toggle(k, on) { on ? classes.add(k) : classes.delete(k); }, remove(k) { classes.delete(k); }, contains(k) { return classes.has(k); } },
     setAttribute(k, v) { this.attributes[k] = v; },
+    removeAttribute(k) { delete this.attributes[k]; },
     addEventListener(k, fn) { this.handlers[k] = fn; },
     replaceChildren(...items) { this.children = items; this.textContent = ''; },
     append(...children) { this.children.push(...children); },
@@ -45,6 +46,8 @@ function harness(file) {
     Timestamp: MockTimestamp,
     setDoc: async () => {}, updateDoc: async () => {}, addDoc: async () => {}, serverTimestamp: () => 'server-time',
     signOut: async () => {}, signInWithEmailAndPassword: async () => {},
+    setupCourtTabs:()=>({select(){}}),setupCourtCounters(){},updateCourtCounters(){},renderTrialProgress(){},
+    createVoteConfirmation:()=>({ask:async()=>c.confirm(),cancel(){}}),
     confirm: () => true, alert: message => { throw Error(message); },
     setTimeout() {}, queueMicrotask() {}, console, URL,
   };
@@ -60,7 +63,7 @@ function harness(file) {
 function jury() {
   const h = harness('app.js');
   h.authCallbacks[0]({ uid: 'juror-1' });
-  h.run("activeTrialId='case-a'; checkingVote=false; currentTrial.status='verdict'; currentAssignment={role:'juror'}; lastKnownSession={role:'juror'};");
+  h.run("activeTrialId='case-a'; checkingVote=false; currentTrial.status='verdict'; currentProfile={active:true,accountType:'student'}; currentAssignment={role:'juror'}; lastKnownSession={role:'juror'};");
   return h;
 }
 const submit = h => h.get('jury-vote-form').handlers.submit({ preventDefault() {} });
@@ -144,7 +147,7 @@ test('failed submission retains error and selection; successful retry clears bot
 test('pending submission is gated and never shows premature success', async () => {
   const h = jury(); select(h);
   let finish; h.c.setDoc = () => new Promise(resolve => finish = resolve);
-  const pending = submit(h);
+  const pending = submit(h); await new Promise(setImmediate);
   assert.equal(h.get('jury-vote-form').hidden, true);
   assert.doesNotMatch(h.get('jury-vote-status').textContent, /recorded/);
   finish(); await pending;
@@ -258,7 +261,7 @@ for (const operation of ['read', 'write']) {
         const h = jury(), wait = deferred();
         if (operation === 'read') h.c.getDoc = () => wait.promise;
         else { select(h); h.c.setDoc = () => wait.promise; }
-        const pending = operation === 'read' ? h.run('refreshMyVote()') : submit(h);
+        const pending = operation === 'read' ? h.run('refreshMyVote()') : submit(h); await new Promise(setImmediate);
         if (change === 'account') await emitAuth(h, { uid: 'new-juror' });
         else if (change === 'sign-out') await emitAuth(h, null);
         else { activate(h, 'case-b'); if (change === 'round-trip') activate(h, 'case-a'); }
@@ -278,7 +281,7 @@ for (const operation of ['read', 'write']) {
 test('ballot refresh cannot unlock a pending write or start a second write', async () => {
   const h = jury(), wait = deferred(); select(h); let writes = 0;
   h.c.setDoc = () => { writes++; return wait.promise; };
-  const pending = submit(h); await h.run('refreshMyVote()');
+  const pending = submit(h); await new Promise(setImmediate); await h.run('refreshMyVote()');
   assert.equal(h.get('jury-vote-form').hidden, true);
   await submit(h); assert.equal(writes, 1);
   wait.resolve(); await pending;
@@ -319,7 +322,7 @@ test('a new trial can vote while a previous trial write finishes', async () => {
   const h = jury(), wait = deferred(); select(h);
   const paths = [];
   h.c.setDoc = (ref) => { paths.push(Array.from(ref)); return wait.promise; };
-  const old = submit(h); activate(h, 'case-b');
+  const old = submit(h); await new Promise(setImmediate); activate(h, 'case-b');
   h.run("currentTrial.status='verdict'; currentAssignment={role:'juror'}; checkingVote=false; applySession({role:'juror'});");
   select(h, 1);
   h.c.setDoc = async ref => { paths.push(Array.from(ref)); };
@@ -956,4 +959,44 @@ test('new HTTP evidence is rejected before writing; unchanged historical HTTP dr
  const form=h.get('prosecution-composer');form.querySelector('textarea').value='A revised argument.';form.querySelector('input[type=url]').value='http://example.org/source';h.c.updateDoc=async(...args)=>writes.push(args);h.c.addDoc=async(...args)=>writes.push(args);
  await form.handlers.submit({preventDefault(){}});assert.equal(writes.length,0);assert.match(h.get('prosecution-feedback').textContent,/HTTPS/);
  form.dataset.editId='legacy';h.run("mySubmissions=[{id:'legacy',section:'prosecution',status:'returned',evidenceUrl:'http://example.org/source'}]");await form.handlers.submit({preventDefault(){}});assert.equal(writes.length,1);assert.equal(writes[0][1].evidenceUrl,'http://example.org/source');
+});
+
+// Final ballot review must remain explicit and scoped while the dialog is open.
+test('ballot review includes complete selected choice/reason and cancellation preserves the form without writes',async()=>{
+ const h=jury();select(h,1);let review,writes=0;h.c.setDoc=async()=>{writes++};h.c.ask=async(...args)=>{review=args;return false};h.run('voteConfirmation.ask=ask');
+ h.get('vote-justification').value='A complete justification.\nA second paragraph.';await submit(h);
+ assert.deepEqual(Array.from(review),['Not Guilty','A complete justification.\nA second paragraph.']);assert.equal(writes,0);assert.equal(h.get('vote-justification').value,'A complete justification.\nA second paragraph.');assert.equal(h.choices[1].attributes['aria-pressed'],'true');assert.equal(h.get('cast-vote').disabled,false);
+});
+test('ballot review cannot submit until approval, and repeated submit opens only one review',async()=>{
+ const h=jury(),wait=deferred();select(h);let reviews=0,writes=0;h.c.ask=()=>{reviews++;return wait.promise};h.run('voteConfirmation.ask=ask');h.c.setDoc=async()=>{writes++};
+ const pending=submit(h);await submit(h);assert.equal(reviews,1);assert.equal(writes,0);assert.equal(h.get('cast-vote').disabled,true);wait.resolve(true);await pending;assert.equal(writes,1);assert.match(h.get('jury-vote-status').textContent,/recorded/);
+});
+for(const change of ['trial','round-trip','sign-out','account','phase','role','paused','already-voted'])test('open ballot review cannot write after '+change,async()=>{
+ const h=jury(),wait=deferred();select(h);let writes=0;h.c.ask=()=>wait.promise;h.run('voteConfirmation.ask=ask');h.c.setDoc=async()=>{writes++};const pending=submit(h);
+ if(change==='trial'||change==='round-trip'){activate(h,'case-b');if(change==='round-trip')activate(h,'case-a');h.run("currentTrial.status='verdict';currentAssignment={role:'juror'};checkingVote=false");}
+ else if(change==='sign-out'||change==='account')await emitAuth(h,change==='sign-out'?null:{uid:'other'});
+ else if(change==='phase')h.run("setTrialStatus('closed')");
+ else if(change==='role')h.run("currentAssignment={role:'defender'};renderIdentity()");
+ else if(change==='paused')h.run("currentProfile.active=false;renderIdentity()");
+ else h.run('alreadyVoted=true;applyJuryVisibility(lastKnownSession)');
+ wait.resolve(true);await pending;assert.equal(writes,0);assert.equal(h.get('cast-vote').disabled,false);
+});
+test('vote validation uses inline status and never opens review for missing choice or short reasoning',async()=>{
+ const h=jury();let reviews=0,writes=0;h.c.ask=async()=>{reviews++;return true};h.run('voteConfirmation.ask=ask');h.c.setDoc=async()=>{writes++};await submit(h);assert.match(h.get('jury-vote-status').textContent,/Select Guilty/);
+ select(h);h.get('vote-justification').value='short';await submit(h);assert.match(h.get('jury-vote-status').textContent,/15 and 2000/);assert.equal(reviews,0);assert.equal(writes,0);
+});
+test('My Submissions uses named status badges and prominent returned feedback/count from existing private data',()=>{
+ const h=harness('app.js');h.run("currentProfile={active:true,accountType:'student'};mySubmissions=['draft','pending','returned','published'].map((status,index)=>({id:String(index),section:'prosecution',status,text:'A private argument',feedback:status==='returned'?'Please add supporting evidence.':''}));renderMine()");
+ const rows=h.get('my-submissions-list').children;assert.deepEqual(rows.map(row=>row.children[1].textContent),['Private draft','Pending review','Returned for revision','Published']);assert.equal(rows[2].children[3].className,'teacher-feedback returned-feedback');assert.match(rows[2].children[3].textContent,/Please add/);assert.equal(h.get('returned-count').textContent,'1 returned for revision');assert.equal(h.get('returned-count').hidden,false);
+ h.run('mySubmissions=[];renderMine()');assert.equal(h.get('returned-count').hidden,true);
+});
+test('editing a returned argument refreshes counters and selects the matching mobile side',()=>{
+ const h=harness('app.js');let side,updates=0;h.c.selectSide=name=>{side=name};h.c.updateCourtCounters=()=>{updates++};h.run("courtTabs.select=selectSide;currentProfile={active:true,accountType:'student'};currentTrial.status='trial';currentAssignment={role:'defender'};mySubmissions=[{id:'returned',section:'defense',status:'returned',text:'Existing argument text.',evidenceUrl:''}];renderIdentity();renderMine()");
+ const edit=h.get('my-submissions-list').children[0].children.at(-1);edit.onclick();assert.equal(side,'defense');assert.equal(updates,1);assert.equal(h.get('defense-composer').querySelector('textarea').value,'Existing argument text.');
+});
+test('student context reset clears returned attention count and refreshes character counters',()=>{
+ const h=jury();let updates=0;h.c.updateCourtCounters=()=>{updates++};h.get('returned-count').hidden=false;h.get('returned-count').textContent='2 returned for revision';h.run('clearPrivateContext()');assert.equal(updates,1);assert.equal(h.get('returned-count').hidden,true);assert.equal(h.get('returned-count').textContent,'');
+});
+test('phase renderer consumes cached status without requesting additional Firestore documents',()=>{
+ const h=jury(),states=[];h.c.renderTrialProgress=value=>states.push(value);const reads=h.snapshots.length;h.run("setTrialStatus('trial');setTrialStatus('verdict');setTrialStatus('closed');setTrialStatus('closed',false)");assert.deepEqual(states,['trial','verdict','closed',null]);assert.equal(h.snapshots.length,reads);
 });

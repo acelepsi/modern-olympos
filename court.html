@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Modern Olympos — The Mythological Court</title>
-  <link rel="stylesheet" href="style.css?v=portrait-containment-1" />
+  <link rel="stylesheet" href="style.css?v=courtroom-experience-1" />
 </head>
 <body class="marble-bg">
 
@@ -73,15 +73,20 @@
         <h1 id="defendant-name">Loading trial…</h1>
         <div class="charge" id="defendant-charge"></div>
       </div>
-      <span class="status-pill" id="status-pill" data-status="">—</span>
+
     </header>
 
+    <nav class="trial-progress" aria-label="Trial progress">
+      <ol><li id="phase-trial" data-state="upcoming"><span class="phase-number" aria-hidden="true">1</span><span>Arguments<small data-phase-state>Upcoming</small></span></li><li id="phase-verdict" data-state="upcoming"><span class="phase-number" aria-hidden="true">2</span><span>Verdict<small data-phase-state>Upcoming</small></span></li><li id="phase-closed" data-state="upcoming"><span class="phase-number" aria-hidden="true">3</span><span>Closed<small data-phase-state>Upcoming</small></span></li></ol>
+      <p id="trial-phase-status" class="sr-only" role="status">Trial phase unavailable.</p>
+    </nav>
+    <div id="court-tabs" class="court-tabs" role="tablist" aria-label="Arguments by side" hidden><button type="button" id="prosecution-tab" role="tab" aria-controls="prosecution-panel" aria-selected="true">Prosecution</button><button type="button" id="defense-tab" role="tab" aria-controls="defense-panel" aria-selected="false" tabindex="-1">Defense</button></div>
     <div class="trial-floor">
 
       <!-- ---------- PROSECUTION (left) ---------- -->
-      <section class="column column--prosecution" aria-label="Prosecution">
+      <section id="prosecution-panel" class="column column--prosecution" aria-label="Prosecution">
         <div class="column-header">
-          <h2 class="nameplate">Prosecution</h2>
+          <h2 class="nameplate" tabindex="-1">Prosecution</h2>
         </div>
 
         <div class="argument-feed" id="prosecution-feed">
@@ -93,8 +98,8 @@
              no login affordance lives down here anymore. -->
         <form class="composer" id="prosecution-composer" hidden>
           <p class="submission-hint">Save a private draft, or send it to the administrator for approval.</p>
-          <textarea aria-label="Argument" maxlength="5000" placeholder="File your argument…" required></textarea>
-          <input type="url" aria-label="Evidence URL (optional)" maxlength="1000" placeholder="Evidence link (optional) — Google Drive, Imgur, etc." />
+          <textarea id="prosecution-argument" aria-label="Prosecution argument" aria-describedby="prosecution-count" maxlength="5000" placeholder="File your argument…" required></textarea><p id="prosecution-count" class="character-count">0 / 5000 characters</p>
+          <input type="url" aria-label="Evidence URL (optional)" maxlength="1000" placeholder="HTTPS evidence link (optional)" />
           <div class="submit-row">
             <button type="button" data-action="draft">Save draft</button>
             <button type="submit">Send for approval</button>
@@ -111,9 +116,9 @@
       <div class="divider" aria-hidden="true"></div>
 
       <!-- ---------- DEFENSE (right) ---------- -->
-      <section class="column column--defense" aria-label="Defense">
+      <section id="defense-panel" class="column column--defense" aria-label="Defense">
         <div class="column-header">
-          <h2 class="nameplate">Defense</h2>
+          <h2 class="nameplate" tabindex="-1">Defense</h2>
         </div>
 
         <div class="argument-feed" id="defense-feed">
@@ -122,8 +127,8 @@
 
         <form class="composer" id="defense-composer" hidden>
           <p class="submission-hint">Save a private draft, or send it to the administrator for approval.</p>
-          <textarea aria-label="Argument" maxlength="5000" placeholder="File your argument…" required></textarea>
-          <input type="url" aria-label="Evidence URL (optional)" maxlength="1000" placeholder="Evidence link (optional) — Google Drive, Imgur, etc." />
+          <textarea id="defense-argument" aria-label="Defense argument" aria-describedby="defense-count" maxlength="5000" placeholder="File your argument…" required></textarea><p id="defense-count" class="character-count">0 / 5000 characters</p>
+          <input type="url" aria-label="Evidence URL (optional)" maxlength="1000" placeholder="HTTPS evidence link (optional)" />
           <div class="submit-row">
             <button type="button" data-action="draft">Save draft</button>
             <button type="submit">Send for approval</button>
@@ -137,7 +142,7 @@
       </section>
 
     </div>
-    <section class="my-submissions" id="my-submissions" hidden><h2>My submissions</h2><p>Drafts are private. Pending submissions are visible only to you and the administrator.</p><div id="my-submissions-list"></div></section>
+    <section class="my-submissions" id="my-submissions" hidden><h2>My submissions <span id="returned-count" class="returned-count" hidden></span></h2><p>Drafts are private. Pending submissions are visible only to you and the administrator.</p><div id="my-submissions-list"></div></section>
 
     <!-- ================= DELIBERATION (jury vote / public results) ================= -->
     <section class="deliberation" id="deliberation">
@@ -153,7 +158,8 @@
           <button type="button" data-choice="not-guilty" aria-pressed="false">Not Guilty</button>
         </div>
         <p id="jury-selection-status" role="status" aria-live="polite">No verdict selected.</p>
-        <textarea aria-label="Reason for your jury vote" minlength="15" maxlength="2000" id="vote-justification" placeholder="Explain your verdict (at least 15 characters)…" required></textarea>
+        <textarea aria-label="Reason for your jury vote" minlength="15" maxlength="2000" id="vote-justification" aria-describedby="justification-count" placeholder="Explain your verdict (at least 15 characters)…" required></textarea>
+        <p id="justification-count" class="character-count">0 / 2000 characters · Minimum 15 characters.</p>
         <div class="submit-row">
           <button type="submit" id="cast-vote">Cast Final Vote</button>
         </div>
@@ -176,6 +182,13 @@
 
   </div>
 
+  <dialog id="vote-confirmation" class="court-dialog" aria-labelledby="vote-confirmation-title" aria-describedby="vote-final-warning">
+    <h2 id="vote-confirmation-title">Review your final ballot</h2>
+    <p class="ballot-choice">Selected verdict: <strong data-confirm-choice></strong></p>
+    <h3>Your complete justification</h3><div class="ballot-reason" data-confirm-reason></div>
+    <p id="vote-final-warning">Your vote is final. Once submitted, it cannot be changed or withdrawn.</p>
+    <div class="dialog-actions"><button type="button" data-confirm-cancel autofocus>Cancel</button><button type="button" data-confirm-submit>Submit Final Vote</button></div>
+  </dialog>
   <script type="module" src="app.js"></script>
 </body>
 </html>
