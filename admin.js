@@ -1,6 +1,7 @@
-import {initializeApp,deleteApp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
-import {getAuth,createUserWithEmailAndPassword,deleteUser,initializeAuth,inMemoryPersistence,connectAuthEmulator,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import {caseCharge} from './case-content.js';
+import {initializeApp,deleteApp} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js';
+import {getAuth,createUserWithEmailAndPassword,deleteUser,initializeAuth,inMemoryPersistence,connectAuthEmulator,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js';
+import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
 import {initializeFirebaseClient} from './firebase-client.js';
 import {provisionStudent} from './student-accounts.js';
 import {portraitUrl} from './portraits.js';
@@ -53,7 +54,7 @@ function renderTrialOptions(preferred){
 function renderTrials(preferred=selectedTrialId){renderTrialOptions(preferred);return selectTrial($('trial-select').value)}
 function syncTrialEditor(){
  const trial=trials.find(t=>t.id===selectedTrialId);
- $('trial-id').readOnly=!!trial;$('trial-id').value=trial?.id||'';$('trial-title').value=trial?.title||'';$('trial-status').value=trial?.status||'trial';$('trial-portrait-url').value=trial?.portraitUrl||'';
+ $('trial-id').readOnly=!!trial;$('trial-id').value=trial?.id||'';$('trial-title').value=trial?.title||'';$('trial-status').value=trial?.status||'trial';$('trial-portrait-url').value=trial?.portraitUrl||'';$('trial-charge').value=typeof trial?.charge==='string'?trial.charge:'';
 }
 // All selection changes, including successful saves, refresh the same dependent panels.
 async function selectTrial(id){
@@ -89,7 +90,7 @@ onAuthStateChanged(auth,async user=>{
  for(const id of ['student-code','student-name','student-password'])$(id).value='';
  for(const id of ['student-rows','trial-select'])$(id).replaceChildren();
  $('trial-select').value='';$('identity').textContent='';
- for(const id of ['trial-id','trial-title','trial-portrait-url','password'])$(id).value='';
+ for(const id of ['trial-id','trial-title','trial-portrait-url','trial-charge','password'])$(id).value='';
  for(const id of ['activate-trial','refresh-roles','refresh-submissions','refresh-votes','publish-verdict'])$(id).disabled=true;
  $('trial-form').querySelector('button').disabled=false;
  status('');$('dashboard').hidden=true;$('login-panel').hidden=!!user;$('switch-account').hidden=!user;
@@ -110,7 +111,7 @@ $('trial-form').addEventListener('submit',async e=>{
  e.preventDefault();const context=selectionContext();if(!sameSelection(context)||savingTrial)return;
  const id=$('trial-id').value.trim(),title=$('trial-title').value.trim(),statusValue=$('trial-status').value;
  if(!/^[a-z0-9-]{1,80}$/.test(id)||!title)return status('Invalid trial ID or title');
- let portrait;try{portrait=portraitUrl($('trial-portrait-url').value)}catch(error){return status(error.message)}
+ let portrait,charge;try{portrait=portraitUrl($('trial-portrait-url').value);charge=caseCharge($('trial-charge').value)}catch(error){return status(error.message)}
  if(pendingTrialSaves.has(id))return;
  const btn=$('trial-form').querySelector('button');pendingTrialSaves.add(id);savingTrial=true;btn.disabled=true;
  try{
@@ -125,6 +126,7 @@ $('trial-form').addEventListener('submit',async e=>{
   if(statusValue==='closed'&&(!existing.exists()||existing.data().status!=='closed')&&!confirm(`Permanently close trial ${id}? This action is irreversible: the trial cannot be reopened. No further jury votes will be accepted after closure. Unsent ballots will not count. Check turnout and finish submission review first. Select OK to permanently close the trial, or Cancel to leave it unchanged.`)){if(sameSelection(context))status('Closure cancelled. Trial was not changed.');return}
   if(!sameSelection(context))return;
   const changes={title,status:statusValue};
+  if(charge||(existing.exists()&&'charge' in existing.data()))changes.charge=charge;
   if(portrait||(existing.exists()&&'portraitUrl' in existing.data()))changes.portraitUrl=portrait;
   if(existing.exists())await updateDoc(ref,changes);else await setDoc(ref,changes);
   if(!currentAdmin(context.auth,context.uid)||!adminAuthorized)return;

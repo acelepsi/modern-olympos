@@ -48,7 +48,7 @@ function harness(file) {
     confirm: () => true, alert: message => { throw Error(message); },
     setTimeout() {}, queueMicrotask() {}, console, URL,
   };
-  vm.createContext(c);
+  vm.createContext(c);vm.runInContext(fs.readFileSync(path.join(root,'case-content.js'),'utf8').replace(/^export /gm,''),c);
   vm.runInContext(fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,''),c);
   vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),c);
   const accountModule=fs.readFileSync(path.join(root,'student-accounts.js'),'utf8').replace(/^export /gm,'');
@@ -903,4 +903,57 @@ test('private reasoning is cleared on sign-out and stale trial reads cannot rend
  const h=await reasoningAdmin();assert.equal(h.get('reasoning-review-list').children.length,1);await h.authCallbacks[0](null);assert.equal(h.get('reasoning-review-list').children.length,0);
  const other=await adminTrials(),wait=deferred();other.c.getDoc=async()=>wait.promise;const pending=other.get('load-reasoning').handlers.click();other.get('trial-select').value='case-b';await other.get('trial-select').handlers.change();
  wait.resolve(snapshot({status:'closed',verdictSummary:{guilty:1,notGuilty:0}}));await pending;assert.equal(other.get('reasoning-review-list').children.length,0);assert.match(other.get('reasoning-review-status').textContent,/Load private reasoning/);
+});
+
+// Maintenance: stable subscriptions and client-side chronological presentation.
+test('ordinary identity/role rendering does not restart or clear submission feeds',()=>{
+ const h=harness('app.js');h.run("activeTrialId='case-a';currentProfile={active:true,accountType:'student'};refreshSubmissionListeners()");
+ const before=h.snapshots.length,published=h.snapshots.at(-2),mine=h.snapshots.at(-1);
+ h.get('prosecution-feed').append(element('Visible argument'));
+ h.run("renderIdentity();renderIdentity();currentAssignment={role:'defender'};renderIdentity();refreshSubmissionListeners()");
+ assert.equal(h.snapshots.length,before);assert.ok(!published.stopped&&!mine.stopped);assert.equal(h.get('prosecution-feed').children.length,1);
+});
+test('profile updates retain subscriptions; paused access stops only the private feed',()=>{
+ const h=harness('app.js');h.authCallbacks[0]({uid:'student'});h.run("activeTrialId='case-a';refreshSubmissionListeners()");
+ const profile=h.snapshots.find(s=>s.ref.join('/')==='students/student');profile.next(snapshot({active:true,accountType:'student',displayName:'Alias'}));
+ const mine=h.snapshots.at(-1),count=h.snapshots.length;profile.next(snapshot({active:true,accountType:'student',displayName:'New Alias'}));assert.equal(h.snapshots.length,count);
+ profile.next(snapshot({active:false,accountType:'student'}));assert.equal(mine.stopped,true);assert.equal(h.snapshots.length,count);assert.equal(h.get('my-submissions').hidden,true);
+ profile.next(snapshot({active:true,accountType:'student'}));assert.equal(h.snapshots.length,count+1);
+});
+test('sign-out and account switching retain the public listener and reject delayed private results',()=>{
+ const h=harness('app.js');h.authCallbacks[0]({uid:'one'});h.run("activeTrialId='case-a';currentProfile={active:true,accountType:'student'};refreshSubmissionListeners()");
+ const published=h.snapshots.at(-2),mine=h.snapshots.at(-1);h.get('prosecution-feed').append(element('Public content'));
+ h.authCallbacks[0]({uid:'two'});mine.next({docs:[{id:'secret',data:()=>({text:'PRIVATE'})}]});
+ assert.equal(mine.stopped,true);assert.ok(!published.stopped);assert.equal(h.get('my-submissions-list').children.length,0);assert.equal(h.get('prosecution-feed').children.length,1);
+ h.authCallbacks[0](null);assert.ok(!published.stopped);assert.equal(h.get('prosecution-feed').children.length,1);
+});
+test('trial switch restarts each relevant subscription once and ignores late public responses',()=>{
+ const h=harness('app.js'),pointer=h.snapshots.find(s=>s.ref.join('/')==='settings/currentTrial');pointer.next(snapshot({trialId:'case-a'}));
+ const old=h.snapshots.at(-1),count=h.snapshots.length;pointer.next(snapshot({trialId:'case-a'}));assert.equal(h.snapshots.length,count);
+ pointer.next(snapshot({trialId:'case-b'}));assert.equal(old.stopped,true);const current=h.snapshots.at(-1);current.next({docs:[]});
+ old.next({docs:[{data:()=>({section:'prosecution',text:'OLD'})}]});assert.equal(h.get('prosecution-feed').textContent,'No approved submissions yet.');
+});
+test('court orders each published column oldest first with missing dates last',()=>{
+ const h=harness('app.js');h.run("activeTrialId='case-a';refreshSubmissionListeners()");
+ const posts=[['late','prosecution',20],['defense-late','defense',30],['undated','prosecution',null],['early','prosecution',10],['defense-early','defense',5]];
+ h.snapshots.at(-1).next({docs:posts.map(([text,section,time])=>({data:()=>({text,section,createdAt:time===null?null:new MockTimestamp(time)})}))});
+ const texts=id=>h.get(id).children.map(article=>article.children[1].textContent);
+ assert.deepEqual(texts('prosecution-feed'),['early','late','undated']);assert.deepEqual(texts('defense-feed'),['defense-early','defense-late']);
+});
+test('charge saves, restores, clears and omits absent legacy metadata',async()=>{
+ const h=await adminTrials(),writes=[];h.c.getDoc=async()=>snapshot({status:'trial'});h.c.updateDoc=async(...args)=>writes.push(args);
+ h.get('trial-charge').value='  A case description.  ';await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal(writes[0][1].charge,'A case description.');assert.equal(h.get('trial-charge').value,'A case description.');
+ h.c.getDoc=async()=>snapshot({status:'trial',charge:'Old description'});h.get('trial-charge').value='';await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal(writes[1][1].charge,'');
+ h.c.getDoc=async()=>snapshot({status:'trial'});await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal('charge' in writes[2][1],false);
+ h.get('trial-charge').value='Unsaved';await h.authCallbacks[0](null);assert.equal(h.get('trial-charge').value,'');
+});
+test('oversized charge fails before any Firestore read or write',async()=>{
+ const h=await adminTrials();let reads=0;h.c.getDoc=async()=>{reads++;return snapshot({status:'trial'})};h.get('trial-charge').value='x'.repeat(2001);
+ await h.get('trial-form').handlers.submit({preventDefault(){}});assert.equal(reads,0);assert.match(h.get('status').textContent,/2000/);
+});
+test('new HTTP evidence is rejected before writing; unchanged historical HTTP draft can be edited',async()=>{
+ const h=harness('app.js'),writes=[];h.run("activeTrialId='case-a';currentTrial.status='trial';currentProfile={active:true,accountType:'student'};currentAssignment={role:'prosecutor'};");
+ const form=h.get('prosecution-composer');form.querySelector('textarea').value='A revised argument.';form.querySelector('input[type=url]').value='http://example.org/source';h.c.updateDoc=async(...args)=>writes.push(args);h.c.addDoc=async(...args)=>writes.push(args);
+ await form.handlers.submit({preventDefault(){}});assert.equal(writes.length,0);assert.match(h.get('prosecution-feedback').textContent,/HTTPS/);
+ form.dataset.editId='legacy';h.run("mySubmissions=[{id:'legacy',section:'prosecution',status:'returned',evidenceUrl:'http://example.org/source'}]");await form.handlers.submit({preventDefault(){}});assert.equal(writes.length,1);assert.equal(writes[0][1].evidenceUrl,'http://example.org/source');
 });

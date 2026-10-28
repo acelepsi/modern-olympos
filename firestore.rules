@@ -41,9 +41,12 @@ service cloud.firestore {
    function validPortrait() { return !('portraitUrl' in request.resource.data) ||
      (request.resource.data.portraitUrl is string && request.resource.data.portraitUrl.size() <= 2000 &&
       (request.resource.data.portraitUrl == '' || request.resource.data.portraitUrl.matches('^https://([A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:]+\\])(:[0-9]{1,5})?([/?#][^\\s]*)?$'))); }
+   function validCharge() { return !('charge' in request.resource.data) ||
+     (request.resource.data.charge is string && request.resource.data.charge.size() <= 2000); }
    allow read: if true;
-   allow create: if admin() && request.resource.data.keys().hasOnly(['title','status','portraitUrl']) && validPortrait() && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed'];
-   allow update: if admin() && forwardPhase() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','status','verdictSummary','portraitUrl'])
+   allow create: if admin() && request.resource.data.keys().hasOnly(['title','status','portraitUrl','charge']) && validPortrait() && validCharge() && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed'];
+   allow update: if admin() && forwardPhase() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','status','verdictSummary','portraitUrl','charge'])
+     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['charge']) || validCharge())
      && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['portraitUrl']) || validPortrait()) && request.resource.data.title is string && request.resource.data.status in ['trial','verdict','closed']
      && (!('verdictSummary' in resource.data) || request.resource.data.status == 'closed')
      && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['verdictSummary']) ||
@@ -115,14 +118,17 @@ service cloud.firestore {
       exists(/databases/$(database)/documents/trials/$(trialId)/assignments/$(request.auth.uid)) &&
       ((request.resource.data.section == 'prosecution' && assignedRole() == 'prosecutor') ||
        (request.resource.data.section == 'defense' && assignedRole() == 'defender')); }
-    function validContent() { return request.resource.data.text is string &&
+    function validContent(allowLegacy) { return request.resource.data.text is string &&
       request.resource.data.text.trim().size() > 0 && request.resource.data.text.size() <= 5000 &&
       request.resource.data.evidenceUrl is string && request.resource.data.evidenceUrl.size() <= 1000 &&
-      (request.resource.data.evidenceUrl == '' || request.resource.data.evidenceUrl.matches('^[hH][tT][tT][pP][sS]?://.*'));
+      (request.resource.data.evidenceUrl == '' ||
+       request.resource.data.evidenceUrl.matches('^[hH][tT][tT][pP][sS]://([A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:]+\\])(:[0-9]{1,5})?([/?#][^\\s]*)?$') ||
+       (allowLegacy && request.resource.data.evidenceUrl == resource.data.evidenceUrl &&
+        request.resource.data.evidenceUrl.matches('^[hH][tT][tT][pP]://([A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:]+\\])(:[0-9]{1,5})?([/?#][^\\s]*)?$')));
     }
     allow get, list: if admin() || resource.data.status == 'published' ||
       (request.auth != null && resource.data.authorUid == request.auth.uid);
-    allow create: if canSubmit() && validContent() &&
+    allow create: if canSubmit() && validContent(false) &&
       request.resource.data.keys().hasOnly(['trialId','authorUid','authorName','section','text','evidenceUrl','status','feedback','createdAt']) &&
       request.resource.data.trialId == trialId && request.resource.data.authorUid == request.auth.uid &&
       request.resource.data.authorName == get(/databases/$(database)/documents/students/$(request.auth.uid)).data.displayName &&
@@ -136,7 +142,7 @@ service cloud.firestore {
          (request.resource.data.status == 'returned' && request.resource.data.feedback is string &&
           request.resource.data.feedback.trim().size() > 0 && request.resource.data.feedback.size() <= 1000)))
       || (request.auth != null && resource.data.authorUid == request.auth.uid &&
-        resource.data.status in ['draft','returned'] && canSubmit() && validContent() &&
+        resource.data.status in ['draft','returned'] && canSubmit() && validContent(true) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','evidenceUrl','status','feedback']) &&
         request.resource.data.status in ['draft','pending'] && request.resource.data.feedback == '');
     allow delete: if false;

@@ -34,7 +34,7 @@ function archive(search='?trial=closed-case'){
  {data:()=>({status:'draft',section:'prosecution',text:'PRIVATE DRAFT'})},
  {data:()=>({status:'pending',section:'defense',text:'PRIVATE PENDING'})}
  ]}},console};
- vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'archive.js'),'utf8').replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\n/gm,''),context);
+ vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'case-content.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,''),context);vm.runInContext(fs.readFileSync(path.join(root,'archive.js'),'utf8').replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\n/gm,''),context);
  return {context,get,calls,run:code=>vm.runInContext(code,context)};
 }
 test('archive renders closed trials, published arguments and valid tally without querying private votes or profiles',async()=>{
@@ -107,4 +107,16 @@ test('reasoning read failures do not expose private fallbacks or hide approved a
 });
 test('case view hides duplicate archive overview and exposes a return link',async()=>{
  const h=archive();await h.run('loadArchive()');assert.equal(h.get('archive-browser').hidden,true);assert.equal(h.get('archive-back').hidden,false);
+});
+
+test('archive orders published arguments independently by createdAt and safely displays optional charge',async()=>{
+ const h=archive();await h.run('loadArchive()');
+ h.context.getDocsFromServer=async query=>query[0].length===1?{docs:[{id:'closed-case',data:()=>({status:'closed',title:'Case',charge:'Case description',verdictSummary:{guilty:1,notGuilty:0}})}]}:query[0][2]==='submissions'?{docs:[
+ ...[['late','prosecution',30],['unknown','prosecution',null],['defense-late','defense',40],['early','prosecution',10],['defense-early','defense',5]].map(([text,section,time])=>({data:()=>({status:'published',text,section,createdAt:time===null?null:{toMillis:()=>time}})}))
+ ]}:{docs:[]};
+ await h.run('loadArchive()');assert.equal(h.get('archive-info').textContent,'Case description');assert.equal(h.get('archive-info').hidden,false);
+ assert.deepEqual(h.get('archive-prosecution').children.map(item=>item.children[1].textContent),['early','late','unknown']);assert.deepEqual(h.get('archive-defense').children.map(item=>item.children[1].textContent),['defense-early','defense-late']);
+});
+test('legacy archive omits an absent charge instead of rendering a placeholder',async()=>{
+ const h=archive();await h.run('loadArchive()');assert.equal(h.get('archive-info').hidden,true);
 });

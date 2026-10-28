@@ -8,6 +8,7 @@ if(!chrome)throw Error('Install Chrome/Chromium or set CHROME_BIN to run this op
 const css=fs.readFileSync(path.join(root,'style.css'),'utf8');
 const helper=fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,'');
 const reasoningHelper=fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,'');
+const caseHelper=fs.readFileSync(path.join(root,'case-content.js'),'utf8').replace(/^export /gm,'');
 const archiveSource=fs.readFileSync(path.join(root,'archive.js'),'utf8');
 const archiveRenderers="const $=id=>document.getElementById(id);\n"+archiveSource.slice(archiveSource.indexOf('function node('),archiveSource.indexOf('async function loadArchive('));
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'olympos-portrait-layout-'));
@@ -21,6 +22,10 @@ try{
    const image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="6144"><rect width="4096" height="6144" fill="seagreen"/></svg>');
    Object.defineProperty(HTMLImageElement.prototype,'src',{...source,set(){this.loading="eager";source.set.call(this,image)}});
    const page=${JSON.stringify(page)};
+   const sorted=chronologicalSubmissions([{data:()=>({text:'unknown'})},{data:()=>({text:'later',createdAt:{toMillis:()=>20}})},{data:()=>({text:'earlier',createdAt:{toMillis:()=>10}})}]);
+   check(sorted.map(post=>post.text).join(',')==='earlier,later,unknown','chronological order with undated arguments last');
+   check(validEvidence('https://example.org/source')&&!validEvidence('http://example.org/source')&&validEvidence('http://example.org/old','http://example.org/old'),'HTTPS evidence and historical HTTP compatibility');
+
    let frames;
    if(page==='court'){
     document.getElementById('defendant-name').textContent='Medusa — synthetic layout test';
@@ -73,7 +78,7 @@ try{
   html=html.replace('<head>','<head>'+csp).replace(/<link[^>]*href="style\.css[^\"]*"[^>]*>/,()=>'<style>'+css+'</style>');
   // A low-specificity conflicting rule must not float the portrait over the page.
   html=html.replace('</head>','<style>img{position:fixed;top:0;left:0;width:4096px;height:6144px;max-width:none;object-fit:fill}</style></head>');
-  html=html.replace('</body>',()=>'<script>'+helper+'\n'+(page==='archive'?reasoningHelper+'\n'+archiveRenderers:'')+'\n'+script+'</script></body>');
+  html=html.replace('</body>',()=>'<script>'+helper+'\n'+caseHelper+'\n'+(page==='archive'?reasoningHelper+'\n'+archiveRenderers:'')+'\n'+script+'</script></body>');
   const file=path.join(temporary,`${page}-${narrow}.html`);fs.writeFileSync(file,html);
   const args=['--headless','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--disable-sync','--no-first-run',`--user-data-dir=${path.join(temporary,page+'-'+narrow+'-profile')}`,'--dump-dom','--virtual-time-budget=3000',`--window-size=${narrow?'390,1000':'1280,1000'}`,pathToFileURL(file).href];
   const cache=path.join(temporary,'cache');fs.mkdirSync(cache,{recursive:true});

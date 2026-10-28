@@ -81,3 +81,18 @@ test('real administrator can publish and withdraw an anonymous copy without expo
  try{await reviewReasoning(false,'',api);}catch(error){error.message='Withdrawal: '+error.message;throw error}assert.equal((await storeSdk.getDoc(storeSdk.doc(anonymousDb,`trials/local-published/publicReasoning/${publicId}`))).exists(),false);
  assert.deepEqual((await storeSdk.getDoc(ballotRef)).data(),originalVote);assert.deepEqual((await storeSdk.getDoc(trialRef)).data().verdictSummary,originalTally);
 });
+
+test('real trial charge and chronological published feed preserve historical evidence under local rules',async()=>{
+ const {chronologicalSubmissions,validEvidence}=await import(require('node:url').pathToFileURL(path.join(__dirname,'..','case-content.js')).href);
+ const key='trials/local-preparation';await storeSdk.updateDoc(ref('admin',key),{charge:'Synthetic case description'});
+ assert.equal((await storeSdk.getDoc(ref('observer',key))).data().charge,'Synthetic case description');
+ await assert.rejects(storeSdk.updateDoc(ref('observer',key),{charge:'Unauthorized'}),error=>error.code==='permission-denied');
+ const privateKey=key+'/submissions/private-prosecutor';const original=(await storeSdk.getDoc(ref('prosecutor',privateKey))).data();
+ await assert.rejects(storeSdk.updateDoc(ref('prosecutor',privateKey),{evidenceUrl:'http://example.org/new'}),error=>error.code==='permission-denied');
+ const evidenceUrl='https://example.org/source';assert.equal(validEvidence(evidenceUrl),true);
+ await storeSdk.updateDoc(ref('prosecutor',privateKey),{text:'Updated synthetic argument',evidenceUrl,status:'pending',feedback:''});
+ await storeSdk.updateDoc(ref('admin',privateKey),{status:'published',feedback:''});
+ const snapshot=await storeSdk.getDocs(storeSdk.query(storeSdk.collection(clients.get('observer').db,key+'/submissions'),storeSdk.where('status','==','published')));
+ const ordered=chronologicalSubmissions(snapshot.docs);for(let i=1;i<ordered.length;i++)assert.ok(ordered[i-1].createdAt.toMillis()<=ordered[i].createdAt.toMillis());
+ const saved=(await storeSdk.getDoc(ref('prosecutor',privateKey))).data();assert.equal(saved.createdAt.toMillis(),original.createdAt.toMillis());assert.equal(saved.evidenceUrl,evidenceUrl);
+});
