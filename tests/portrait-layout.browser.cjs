@@ -7,6 +7,9 @@ const chrome=[process.env.CHROME_BIN,'/usr/lib/chromium/chromium','chromium','go
 if(!chrome)throw Error('Install Chrome/Chromium or set CHROME_BIN to run this optional layout test.');
 const css=fs.readFileSync(path.join(root,'style.css'),'utf8');
 const helper=fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,'');
+const reasoningHelper=fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,'');
+const archiveSource=fs.readFileSync(path.join(root,'archive.js'),'utf8');
+const archiveRenderers="const $=id=>document.getElementById(id);\n"+archiveSource.slice(archiveSource.indexOf('function node('),archiveSource.indexOf('async function loadArchive('));
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'olympos-portrait-layout-'));
 try{
  for(const page of ['court','archive'])for(const narrow of [false,true]){
@@ -25,6 +28,22 @@ try{
    }else{
     document.getElementById('archive-detail').hidden=false;
     document.getElementById('archive-title').textContent='Medusa — synthetic archive test';
+    renderArgument(document.getElementById('archive-prosecution'),{authorName:'Prosecution Alias',text:'A published argument.\\n\\nA second paragraph.'});
+    renderArgument(document.getElementById('archive-defense'),{authorName:'Defense Alias',text:'A published defense with readable contrast.'});
+    renderTally({guilty:2,notGuilty:1});
+    renderReasoningCards([{id:'ABCDEFGHIJKLMNOPQRST',data:()=>({choice:'guilty',reason:'A reviewed anonymous explanation for guilt.'})},{id:'ZYXWVUTSRQPONMLKJIHG',data:()=>({choice:'not-guilty',reason:'A reviewed anonymous explanation for acquittal.'})}]);
+    const rgb=color=>(color.match(/[0-9.]+/g)||[]).map(Number);
+    const luminance=color=>{const values=rgb(color).slice(0,3).map(value=>{value/=255;return value<=.04045?value/12.92:((value+.055)/1.055)**2.4});return .2126*values[0]+.7152*values[1]+.0722*values[2]};
+    for(const text of document.querySelectorAll('.archive-argument-text,.archive-alias,.reasoning-text,.reasoning-choice,.archive-total span,.archive-total strong')){
+     let backdrop=text;while(backdrop&&getComputedStyle(backdrop).backgroundColor==='rgba(0, 0, 0, 0)')backdrop=backdrop.parentElement;
+     const fg=luminance(getComputedStyle(text).color),bg=luminance(getComputedStyle(backdrop).backgroundColor);
+     check((Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)>=4.5,'archive text contrast at least 4.5:1');
+    }
+    const paragraphStyle=getComputedStyle(document.querySelector('.archive-argument-text'));check(paragraphStyle.whiteSpace==='pre-wrap'&&parseFloat(paragraphStyle.lineHeight)>=1.5*parseFloat(paragraphStyle.fontSize),'argument paragraphs preserve line breaks and readable spacing');
+    const prosecution=document.querySelector('.archive-side-prosecution').getBoundingClientRect(),defense=document.querySelector('.archive-side-defense').getBoundingClientRect();
+    check(innerWidth<=720?defense.top>=prosecution.bottom:defense.left>=prosecution.right,'arguments stack on narrow screens and form desktop columns');
+    const caseFile=document.querySelector('.archive-page').getBoundingClientRect();check(caseFile.right<=innerWidth&&caseFile.left>=0,'case file fits viewport');
+
     const thumbnail=document.createElement('span');thumbnail.className='trial-portrait archive-thumbnail';
     const link=document.createElement('a');link.append(thumbnail,document.createTextNode('Medusa'));
     const item=document.createElement('li');item.append(link);document.getElementById('archive-list').append(item);
@@ -54,7 +73,7 @@ try{
   html=html.replace('<head>','<head>'+csp).replace(/<link[^>]*href="style\.css[^\"]*"[^>]*>/,()=>'<style>'+css+'</style>');
   // A low-specificity conflicting rule must not float the portrait over the page.
   html=html.replace('</head>','<style>img{position:fixed;top:0;left:0;width:4096px;height:6144px;max-width:none;object-fit:fill}</style></head>');
-  html=html.replace('</body>','<script>'+helper+'\n'+script+'</script></body>');
+  html=html.replace('</body>',()=>'<script>'+helper+'\n'+(page==='archive'?reasoningHelper+'\n'+archiveRenderers:'')+'\n'+script+'</script></body>');
   const file=path.join(temporary,`${page}-${narrow}.html`);fs.writeFileSync(file,html);
   const args=['--headless','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--disable-sync','--no-first-run',`--user-data-dir=${path.join(temporary,page+'-'+narrow+'-profile')}`,'--dump-dom','--virtual-time-budget=3000',`--window-size=${narrow?'390,1000':'1280,1000'}`,pathToFileURL(file).href];
   const cache=path.join(temporary,'cache');fs.mkdirSync(cache,{recursive:true});

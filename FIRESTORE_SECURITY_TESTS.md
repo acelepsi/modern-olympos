@@ -120,3 +120,11 @@ SDK/toolchain and does not replace the site's browser SDK.
 ## Classroom completion additions
 
 The designated administrator can now create minimal student profiles and pause/resume participation; no student or other teacher can do so. New cases cover strict profile fields, teacher-profile immutability, legacy field preservation, paused participation and published-only archive queries. The separate Auth emulator suite exercises actual secondary-session account creation without switching the teacher. The earlier validation counts above are historical; the current PR records executed results.
+
+## Reviewed anonymous reasoning
+
+See ANONYMOUS_REASONING.md for the separate new-rule inventory and privacy limits.
+The suite now has 178 cases, adding 27 reasoning confidentiality, authorization,
+release-gate, payload, withdrawal and legacy-compatibility cases to the prior 151.
+The full Auth/Firestore suite also exercises transaction approval/withdrawal with
+real synthetic logins. Existing ballot and student profile rules are unchanged.

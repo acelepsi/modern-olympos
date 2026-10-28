@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const PUBLIC_FILES = ['index.html','court.html','archive.html','who-is-who.html','admin.html','style.css','landing.js','app.js','admin.js','archive.js','firebase-client.js','student-accounts.js','portraits.js'];
+const PUBLIC_FILES = ['index.html','court.html','archive.html','who-is-who.html','admin.html','style.css','landing.js','app.js','admin.js','archive.js','firebase-client.js','student-accounts.js','portraits.js','jury-reasoning.js'];
 async function prepareSite(root = path.join(__dirname, '..')) {
   const output = path.join(root, 'dist');
   await fs.mkdir(output, {recursive:true});

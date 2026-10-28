@@ -528,3 +528,60 @@ test('legacy trials remain writable without adding a portrait field',async()=>{
  await assertSucceeds(updateDoc(ref(ADMIN,'trials/portrait-legacy'),{title:'Updated legacy case'}));
  assert.equal('portraitUrl' in (await getDoc(ref(ADMIN,'trials/portrait-legacy'))).data(),false);
 });
+
+const publicReasoningId='ABCDEFGHIJKLMNOPQRST';
+async function seedReasoning(phase='closed',summary={guilty:1,notGuilty:0}){
+ await seed({'trials/reason-case':{title:'Synthetic reasoning case',status:phase,...(summary?{verdictSummary:summary}:{})},
+ 'trials/reason-case/votes/juror':{choice:'guilty',reason:'Original private reasoning only.',castAt:Timestamp.fromMillis(1000)}});
+}
+const publicCopy=()=>({choice:'guilty',reason:'An approved anonymous explanation.'});
+for(const uid of [null,'prosecutor','defender','juror','observer','other-teacher'])test(`${uid||'visitor'} cannot approve, edit, exclude or read private reasoning reviews`,async()=>{
+ await seedReasoning();
+ const review='trials/reason-case/reasoningReviews/juror',copy=`trials/reason-case/publicReasoning/${publicReasoningId}`;
+ await assertFails(setDoc(ref(uid,review),{state:'approved',publicId:publicReasoningId}));await assertFails(setDoc(ref(uid,copy),publicCopy()));
+ await seed({[review]:{state:'approved',publicId:publicReasoningId},[copy]:publicCopy()});
+ await assertFails(getDoc(ref(uid,review)));await assertFails(getDocs(collection(db(uid),'trials/reason-case/reasoningReviews')));
+ await assertFails(updateDoc(ref(uid,copy),{reason:'Unauthorized replacement reasoning.'}));await assertFails(deleteDoc(ref(uid,copy)));
+});
+for(const [phase,summary] of [['trial',{guilty:1,notGuilty:0}],['verdict',{guilty:1,notGuilty:0}],['closed',null],['closed',{guilty:0,notGuilty:0}]])test(`reasoning requires permanent closure and a positive published tally ${phase}-${JSON.stringify(summary)}`,async()=>{
+ await seedReasoning(phase,summary);const copy=`trials/reason-case/publicReasoning/${publicReasoningId}`;await seed({[copy]:publicCopy()});
+ await assertFails(getDoc(ref(null,copy)));await assertFails(getDocs(collection(db(null),'trials/reason-case/publicReasoning')));
+ await assertFails(setDoc(ref(ADMIN,copy),publicCopy()));await assertFails(setDoc(ref(ADMIN,'trials/reason-case/reasoningReviews/juror'),{state:'approved',publicId:publicReasoningId}));
+});
+test('administrator can approve an anonymous copy while public ballots and profiles remain denied',async()=>{
+ await seedReasoning();const copy=`trials/reason-case/publicReasoning/${publicReasoningId}`,review='trials/reason-case/reasoningReviews/juror';
+ const batch=writeBatch(db(ADMIN));batch.set(ref(ADMIN,copy),publicCopy());batch.set(ref(ADMIN,review),{state:'approved',publicId:publicReasoningId});await assertSucceeds(batch.commit());
+ const publicData=(await assertSucceeds(getDoc(ref(null,copy)))).data();assert.deepEqual(Object.keys(publicData).sort(),['choice','reason']);
+ await assertSucceeds(getDocs(collection(db(null),'trials/reason-case/publicReasoning')));
+ await assertFails(getDoc(ref(null,'trials/reason-case/votes/juror')));await assertFails(getDocs(collection(db(null),'trials/reason-case/votes')));await assertFails(getDoc(ref(null,'students/juror')));
+ await assertSucceeds(getDoc(ref('juror','trials/reason-case/votes/juror')));await assertFails(getDoc(ref('observer','trials/reason-case/votes/juror')));
+ assert.equal((await getDoc(ref(ADMIN,'trials/reason-case'))).data().verdictSummary.guilty,1);
+});
+for(const field of ['authorUid','studentCode','email','displayName','castAt','submittedAt','label','publicId'])test('public reasoning rejects identifying/extra field '+field,async()=>{
+ await seedReasoning();await assertFails(setDoc(ref(ADMIN,`trials/reason-case/publicReasoning/${publicReasoningId}`),{...publicCopy(),[field]:'sensitive'}));
+});
+for(const reason of ['', 'short', 'x'.repeat(2001), 'This explanation includes learner@example.invalid.'])test('public reasoning rejects invalid/contact text '+reason.slice(0,35),async()=>{
+ await seedReasoning();await assertFails(setDoc(ref(ADMIN,`trials/reason-case/publicReasoning/${publicReasoningId}`),{choice:'guilty',reason}));
+});
+test('public reasoning cannot expose a source UID as its document ID or change an approved choice',async()=>{
+ await seedReasoning();await assertFails(setDoc(ref(ADMIN,'trials/reason-case/publicReasoning/juror'),publicCopy()));
+ const copy=`trials/reason-case/publicReasoning/${publicReasoningId}`;await assertSucceeds(setDoc(ref(ADMIN,copy),publicCopy()));
+ await assertFails(updateDoc(ref(ADMIN,copy),{choice:'not-guilty'}));await assertSucceeds(updateDoc(ref(ADMIN,copy),{reason:'A newly reviewed anonymous explanation.'}));
+});
+test('exclusion and withdrawal never alter a ballot or final tally',async()=>{
+ await seedReasoning();const copy=`trials/reason-case/publicReasoning/${publicReasoningId}`,review='trials/reason-case/reasoningReviews/juror';
+ await assertSucceeds(setDoc(ref(ADMIN,review),{state:'excluded',publicId:publicReasoningId}));assert.equal((await getDocs(collection(db(null),'trials/reason-case/publicReasoning'))).size,0);
+ await assertSucceeds(setDoc(ref(ADMIN,copy),publicCopy()));await assertSucceeds(setDoc(ref(ADMIN,review),{state:'approved',publicId:publicReasoningId}));
+ const batch=writeBatch(db(ADMIN));batch.delete(ref(ADMIN,copy));batch.update(ref(ADMIN,review),{state:'excluded'});await assertSucceeds(batch.commit());
+ assert.equal((await getDoc(ref(ADMIN,'trials/reason-case/votes/juror'))).data().reason,'Original private reasoning only.');assert.deepEqual((await getDoc(ref(ADMIN,'trials/reason-case'))).data().verdictSummary,{guilty:1,notGuilty:0});
+});
+test('review state requires an existing ballot, fixed random reference and valid fields',async()=>{
+ await seedReasoning();await assertFails(setDoc(ref(ADMIN,'trials/reason-case/reasoningReviews/no-ballot'),{state:'approved',publicId:publicReasoningId}));
+ const review='trials/reason-case/reasoningReviews/juror';await assertFails(setDoc(ref(ADMIN,review),{state:'automatic',publicId:publicReasoningId}));await assertSucceeds(setDoc(ref(ADMIN,review),{state:'approved',publicId:publicReasoningId}));
+ await assertFails(updateDoc(ref(ADMIN,review),{publicId:'ZYXWVUTSRQPONMLKJIHG'}));await assertFails(updateDoc(ref(ADMIN,review),{email:'learner@example.invalid'}));
+});
+test('previously completed trials need no migration and reasoning is never auto-published',async()=>{
+ await seedReasoning();assert.equal((await assertSucceeds(getDocs(collection(db(null),'trials/reason-case/publicReasoning')))).size,0);
+ await assertFails(updateDoc(ref(ADMIN,'trials/reason-case'),{status:'verdict'}));await assertFails(updateDoc(ref(ADMIN,'trials/reason-case'),{verdictSummary:{guilty:99,notGuilty:0}}));
+ await assertFails(updateDoc(ref(ADMIN,'trials/reason-case/votes/juror'),{reason:'Rewritten ballot must never be allowed.'}));
+});
