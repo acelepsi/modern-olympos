@@ -329,13 +329,13 @@ a { color: inherit; }
 }
 
 .dossier .mugshot {
-  width: 108px;
-  height: 108px;
-  min-width: 108px;
-  max-width: 108px;
-  min-height: 108px;
-  max-height: 108px;
-  flex: 0 0 108px;
+  width: 136px;
+  height: 136px;
+  min-width: 136px;
+  max-width: 136px;
+  min-height: 136px;
+  max-height: 136px;
+  flex: 0 0 136px;
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
@@ -822,7 +822,7 @@ a { color: inherit; }
 .archive-case-heading{display:flex;align-items:center;gap:20px}.archive-case-heading h2{min-width:0;overflow-wrap:anywhere}
 
 @media(max-width:600px){
- .dossier .mugshot{width:84px;height:84px;min-width:84px;max-width:84px;min-height:84px;max-height:84px;flex-basis:84px}
+ .dossier .mugshot{width:96px;height:96px;min-width:96px;max-width:96px;min-height:96px;max-height:96px;flex-basis:96px}
 }
 
 /* Completed case file: archive-only contrast and structure, never court overrides. */
@@ -852,15 +852,6 @@ a { color: inherit; }
 .dossier .defendant-info h1{font-size:clamp(1.8rem,3vw,2.5rem);line-height:1.15;margin:.25rem 0 .6rem;overflow-wrap:anywhere}
 .dossier .defendant-info .charge-label{color:#d9b871}
 .dossier .defendant-info .charge{line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch}
-.trial-progress{padding:1rem 2rem;background:#221f1c;border-bottom:1px solid var(--line-on-dark)}
-.trial-progress ol{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.4rem;padding:0;margin:0 auto;max-width:850px}
-.trial-progress li{position:relative;display:flex;align-items:center;gap:.65rem;padding:.65rem;border:1px solid #706858;border-radius:6px;color:#d5cec1}
-.trial-progress li:not(:last-child)::after{content:'→';position:absolute;right:-1.2rem;color:#d9b871}
-.trial-progress small{display:block;font-size:.8rem;margin-top:.2rem;font-family:'Source Sans 3',sans-serif}
-.trial-progress .phase-number{display:grid;place-items:center;flex:0 0 1.8rem;height:1.8rem;border:1px solid currentColor;border-radius:50%}
-.trial-progress [data-state=active]{background:#40341e;border:2px solid #d9b871;color:#fff1c9;font-weight:600}
-.trial-progress [data-state=completed]{color:#e2dfd5;border-color:#aaa18e}
-.trial-progress [data-state=completed] .phase-number{background:#e2dfd5;color:#29251e}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .court-tabs{display:flex;padding:.75rem 1rem;gap:.6rem;background:#221f1c}
 .court-tabs button{flex:1;padding:.75rem;border:1px solid #b9ac91;border-radius:4px;background:#29251e;color:#f3ede0;font:inherit;font-weight:600;cursor:pointer}
@@ -890,7 +881,44 @@ a { color: inherit; }
 .dialog-actions [data-confirm-submit]{background:#d9b871;color:#221f1c;font-weight:700}
 @media(max-width:600px){
  .dossier{padding:20px 16px;gap:16px;align-items:flex-start}
- .trial-progress{padding:.8rem .5rem}.trial-progress ol{gap:1rem}.trial-progress li{padding:.5rem .3rem;gap:.3rem;font-size:.9rem;flex-direction:column;text-align:center}.trial-progress .phase-number{flex-basis:1.4rem;width:1.4rem;height:1.4rem}.trial-progress small{font-size:.72rem}.trial-progress li:not(:last-child)::after{right:-.95rem;top:50%;transform:translateY(-50%)}
+
  .court-dialog{padding:1rem}.dialog-actions button{flex:1}
 }
 @media(prefers-reduced-motion:reduce){.trial-room *{scroll-behavior:auto!important}}
+
+/* Original local artwork: a shared emblem and a courtroom-only architectural dossier. */
+.site-emblem{display:block;position:static;inset:auto;width:48px;height:48px;flex:0 0 48px;object-fit:contain}
+.hero-content .hero-emblem{width:96px;height:96px;margin:0 auto 1.5rem}
+.dossier{position:relative;isolation:isolate;display:grid;grid-template-columns:136px minmax(0,1fr) minmax(260px,300px);gap:32px;align-items:center;padding:38px clamp(20px,3vw,44px);background:#10171b;border-top:1px solid #554c36;border-bottom:1px solid #706044}
+.dossier::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,rgba(10,15,18,.58),rgba(10,15,18,.9) 26%,rgba(10,15,18,.91) 65%,rgba(10,15,18,.56)),url('courtroom-architecture.svg') center/cover no-repeat}
+.dossier .mugshot{width:136px;height:136px;min-width:136px;max-width:136px;min-height:136px;max-height:136px;flex-basis:136px;border:1px solid #9e865a;border-radius:2px;background:#101619;box-shadow:0 8px 24px #0006,inset 0 0 0 6px #242820}
+.dossier .mugshot::after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:url('portrait-frame.svg') center/100% 100% no-repeat}
+.dossier .mugshot>img{inset:8px;width:calc(100% - 16px);height:calc(100% - 16px);object-fit:contain;object-position:center}
+.dossier .defendant-info{min-width:0;text-shadow:0 2px 12px #0008}
+.dossier .defendant-info .charge-label{font-size:.75rem;letter-spacing:.17em;color:#d9bd83}
+.dossier .defendant-info h1{font-size:clamp(2rem,3.2vw,3rem);line-height:1.08;letter-spacing:.015em;margin:.45rem 0 .8rem;color:#f7efdf;overflow-wrap:anywhere}
+.dossier .defendant-info .charge{font-size:.98rem;line-height:1.65;color:#ded6c7;max-width:65ch}
+.dossier .trial-progress{min-width:0;padding:0;border:0;background:transparent;justify-self:end;width:100%;align-self:center}
+.dossier .trial-progress ol{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;gap:14px;margin:0;padding:0;max-width:none}
+.dossier .trial-progress li{position:relative;display:flex;flex-direction:column;align-items:center;gap:.45rem;min-width:0;padding:0;border:0;background:none;color:#c9c0b1;font-size:.75rem;line-height:1.3;text-align:center;font-weight:400;white-space:nowrap}
+.dossier .trial-progress li:not(:last-child)::after{content:'';position:absolute;left:calc(50% + 18px);right:calc(-50% + 4px);top:11px;height:1px;background:#8f8060;transform:none}
+.dossier .trial-progress .phase-number{position:relative;z-index:1;display:grid;place-items:center;flex:0 0 23px;width:23px;height:23px;border:1px solid #a09274;border-radius:50%;color:inherit;background:#141b1e;font-size:.75rem}
+.dossier .trial-progress [data-state=active]{color:#f0d299;font-weight:600}
+.dossier .trial-progress [data-state=active] .phase-number{border-color:#d9b871;background:#413723;color:#fff0c9}
+.dossier .trial-progress [data-state=completed] .phase-number{background:#2d3434;color:#ddd5c7;border-color:#9b927d}
+.dossier .trial-progress small{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:1100px){
+ .dossier{grid-template-columns:116px minmax(0,1fr);gap:20px 28px;padding:30px 28px;align-items:start}
+ .dossier .mugshot{grid-row:1 / span 2;width:116px;height:116px;min-width:116px;max-width:116px;min-height:116px;max-height:116px;flex-basis:116px}
+ .dossier .trial-progress{grid-column:2;justify-self:start;width:min(100%,300px)}
+}
+@media(max-width:600px){
+ .dossier{grid-template-columns:96px minmax(0,1fr);gap:22px 18px;padding:26px 18px}
+ .dossier .mugshot{grid-row:auto;width:96px;height:96px;min-width:96px;max-width:96px;min-height:96px;max-height:96px;flex-basis:96px}
+ .dossier .defendant-info h1{font-size:clamp(1.75rem,6vw,2.2rem);line-height:1.15;margin:.4rem 0 .6rem}
+ .dossier .defendant-info .charge{font-size:.9rem;line-height:1.55}
+ .dossier .trial-progress{grid-column:1 / -1;justify-self:center;width:min(100%,360px)}
+ .dossier .trial-progress ol{gap:12px}.dossier .trial-progress li{font-size:.75rem}
+}
+@media(max-width:900px){.site-header{flex-wrap:wrap;row-gap:12px}.primary-nav{order:3;flex-basis:100%;flex-wrap:wrap;gap:12px 24px}}
+@media(max-width:600px){.site-header{padding:12px 16px;gap:14px}.site-header .site-emblem{width:42px;height:42px;flex-basis:42px}.site-header .auth-area{margin-left:auto}}

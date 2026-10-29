@@ -7,7 +7,7 @@
     "node": ">=24.12.0"
   },
   "scripts": {
-    "test": "node tests/regressions.cjs && node --test tests/local-browser.test.cjs tests/classroom.test.cjs tests/portraits.test.cjs tests/jury-reasoning.test.cjs tests/case-content.test.cjs tests/court-ui.test.cjs",
+    "test": "node tests/regressions.cjs && node --test tests/local-browser.test.cjs tests/classroom.test.cjs tests/portraits.test.cjs tests/jury-reasoning.test.cjs tests/case-content.test.cjs tests/court-ui.test.cjs tests/dossier.test.cjs",
     "test:security": "firebase emulators:exec --config firebase.emulators.json --project demo-modern-olympos --only firestore \"node --test --test-concurrency=1 tests/firestore.security.test.cjs\"",
     "test:all": "npm test && npm run test:local:auth && npm run test:security && npm run test:local:integration",
     "local:browser": "node scripts/start-local.cjs",

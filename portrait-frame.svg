@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" fill="none">
+  <title>Original classical portrait frame</title>
+  <g stroke="#c5a66b" stroke-width="1">
+    <path d="M10 29V10h19m102 0h19v19m0 102v19h-19m-102 0H10v-19M4 33V4h29m94 0h29v29m0 94v29h-29m-94 0H4v-29"/>
+    <path d="M18 31V18h13m98 0h13v13m0 98v13h-13m-98 0H18v-13"/>
+    <path d="m13 13 9 9m116 0 9-9m0 134-9-9M13 147l9-9M37 7h86M153 37v86M123 153H37M7 123V37" stroke-opacity=".55"/>
+    <path d="m80 4 3 3-3 3-3-3 3-3Zm76 76-3 3-3-3 3-3 3 3ZM80 156l-3-3 3-3 3 3-3 3ZM4 80l3-3 3 3-3 3-3-3Z" fill="#c5a66b"/>
+  </g>
+</svg>
