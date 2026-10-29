@@ -27,6 +27,6 @@ jobs:
         run: node tests/portrait-layout.browser.cjs
       - name: Teacher workspace, landing and native print in Chrome
         run: node tests/platform-polish.browser.cjs
-      - name: Full administrator module and Partner Schools in Chrome
+      - name: Administrator module, school publication and international homepage in Chrome
         run: node tests/admin-module.browser.cjs
       - run: npm run prepare:site

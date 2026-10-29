@@ -16,12 +16,34 @@ service cloud.firestore {
        (get(/databases/$(database)/documents/schools/$(id)).data.active == true ||
         (allowOld && id == resource.data.get('schoolId','') && visible == false))));
   }
+  function validPublicSchool(data) {
+   return data.keys().hasOnly(['name','countryCode'])
+     && data.name is string && data.name.trim().size() > 0 && data.name.size() <= 160
+     && data.countryCode in ['TR','RO','GR'];
+  }
+  function publicSchoolSynced(id) {
+   let path = /databases/$(database)/documents/publicSchools/$(id);
+   return !existsAfter(path) || (request.resource.data.active == true
+     && getAfter(path).data.name == request.resource.data.name
+     && getAfter(path).data.countryCode == request.resource.data.countryCode);
+  }
+  // Explicitly approved directory copies only; private schools remain administrator-only.
+  match /publicSchools/{schoolId} {
+   allow read: if true;
+   allow create, update: if admin() && schoolId.matches('^[A-Za-z0-9_-]{1,80}$')
+     && validPublicSchool(request.resource.data)
+     && getAfter(/databases/$(database)/documents/schools/$(schoolId)).data.active == true
+     && getAfter(/databases/$(database)/documents/schools/$(schoolId)).data.name == request.resource.data.name
+     && getAfter(/databases/$(database)/documents/schools/$(schoolId)).data.countryCode == request.resource.data.countryCode;
+   allow delete: if admin();
+  }
   match /schools/{schoolId} {
    allow read: if admin();
    allow create, update: if admin() && schoolId.matches('^[A-Za-z0-9_-]{1,80}$')
      && request.resource.data.keys().hasOnly(['name','countryCode','active'])
      && request.resource.data.name is string && request.resource.data.name.trim().size() > 0 && request.resource.data.name.size() <= 160
-     && request.resource.data.countryCode in ['TR','RO','GR'] && request.resource.data.active is bool;
+     && request.resource.data.countryCode in ['TR','RO','GR'] && request.resource.data.active is bool
+     && publicSchoolSynced(schoolId);
    allow delete: if false;
   }
   match /students/{uid} {

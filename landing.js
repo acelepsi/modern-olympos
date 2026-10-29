@@ -1,15 +1,8 @@
 // =================================================================
 // MODERN OLYMPOS — landing.js
 // =================================================================
-// Deliberately separate from app.js: the landing page never touches
-// Firebase or the login modal, so there's no reason to load the
-// Firebase SDK or run session logic here — this keeps the first
-// screen a visitor sees fast and dependency-free, and avoids console
-// errors from app.js querying for DOM elements (composer forms, the
-// jury vote form, etc.) that don't exist on this page.
-//
-// All it does: cross-fade through the .hero-slide elements.
-// =================================================================
+// Hero artwork behavior only. Public directory queries live in international-client.js;
+// classroom forms and authentication UI remain separate in app.js.
 
 const SLIDE_INTERVAL_MS = 6000;
 

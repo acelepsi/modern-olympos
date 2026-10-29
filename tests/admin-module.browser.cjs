@@ -13,7 +13,7 @@ const records=new Map([
  ['schools/existing-school',{name:'Existing School',countryCode:'TR',active:true}],
  ['trials/synthetic-trial',{title:'Synthetic Trial',status:'trial'}]
 ]);
-window.syntheticWrites=[];const callbacks=[];let sequence=0;
+window.syntheticWrites=[];window.syntheticReads=[];window.syntheticDeletes=[];window.syntheticFail=[];window.syntheticSet=(key,data)=>data===null?records.delete(key):records.set(key,data);const callbacks=[];let sequence=0;
 const auth={currentUser:{uid:'synthetic-admin'}},db={};
 export function initializeFirebaseClient(){return {app:{},auth,db}}
 export function initializeApp(){return {}}
@@ -36,23 +36,23 @@ export function query(base,...filters){return {...base,filters}}
 function snapshot(ref){return {id:ref.id,exists:()=>records.has(ref.path),data:()=>records.get(ref.path),metadata:{fromCache:false,hasPendingWrites:false}}}
 export async function getDoc(ref){return snapshot(ref)}
 export const getDocFromServer=getDoc;
-export async function getDocs(ref){const prefix=ref.path+'/';const docs=[...records.keys()].filter(key=>key.startsWith(prefix)&&!key.slice(prefix.length).includes('/')).filter(key=>(ref.filters||[]).every(([field,op,value])=>op==='=='&&records.get(key)[field]===value)).map(key=>snapshot({path:key,id:key.split('/').at(-1)}));return {metadata:{fromCache:false,hasPendingWrites:false},docs,size:docs.length}}
+export async function getDocs(ref){window.syntheticReads.push(ref.path);if(window.syntheticFail.includes(ref.path))throw Error('Synthetic unavailable');const prefix=ref.path+'/';const docs=[...records.keys()].filter(key=>key.startsWith(prefix)&&!key.slice(prefix.length).includes('/')).filter(key=>(ref.filters||[]).every(([field,op,value])=>op==='=='&&records.get(key)[field]===value)).map(key=>snapshot({path:key,id:key.split('/').at(-1)}));return {metadata:{fromCache:false,hasPendingWrites:false},docs,size:docs.length}}
 export const getDocsFromServer=getDocs;
 export async function setDoc(ref,data){window.syntheticWrites.push({path:ref.path,data});records.set(ref.path,data)}
 export async function updateDoc(ref,data){await setDoc(ref,{...records.get(ref.path),...data})}
-export async function deleteDoc(ref){records.delete(ref.path)}
+export async function deleteDoc(ref){window.syntheticDeletes.push(ref.path);records.delete(ref.path)}
 export function onSnapshot(ref,next){queueMicrotask(()=>next(snapshot(ref)));return()=>{}}
 export async function runTransaction(_,callback){return callback({get:getDoc,set:setDoc,update:updateDoc,delete:deleteDoc})}
 export class Timestamp{toMillis(){return 0}}
 `;
-const allowed=new Set(['admin.html','mock-sdk.js',...fs.readdirSync(root).filter(name=>/\.(js|css|svg)$/.test(name))]);
+const allowed=new Set(['admin.html','index.html','mock-sdk.js',...fs.readdirSync(root).filter(name=>/\.(js|css|svg)$/.test(name))]);
 const server=http.createServer((req,res)=>{
  const name=new URL(req.url,'http://localhost').pathname.slice(1)||'admin.html';
  if(!allowed.has(name)){res.writeHead(404);return res.end()}
  let body=name==='mock-sdk.js'?sdk:read(name);
  // Keep the fixture offline without expected font-policy console errors.
- if(name.endsWith('.css'))body=body.replace(/@import\s+url\([^;]+;/g,'');
- if(name==='admin.html'){
+ if(name.endsWith('.css'))body=body.replace(/@import\s+url\([^)]*\);/g,'');
+ if(name==='admin.html'||name==='index.html'){
   const imports=Object.fromEntries(['app','auth','firestore'].map(part=>['https://www.gstatic.com/firebasejs/13.1.0/firebase-'+part+'.js','/mock-sdk.js']));
   imports['/firebase-client.js']='/mock-sdk.js';
   body=body.replace('<head>','<head><link rel="icon" href="data:,"><script type="importmap">'+JSON.stringify({imports})+'</script>');
@@ -90,10 +90,45 @@ async function waitFor(expression,label){for(let i=0;i<100;i++){if(errors.length
   // Exercise query/where in the real controller, not merely their import bindings.
   await evaluate("document.getElementById('school-name').value='Updated Synthetic School';document.getElementById('school-form').requestSubmit()");
   await waitFor("document.getElementById('student-school').textContent.includes('Updated Synthetic School')",'existing-school query path');
+  check(await evaluate("!window.syntheticWrites.some(write=>write.path.startsWith('publicSchools/'))"),'saving private schools never publishes automatically');
+  await evaluate("window.confirm=()=>false;document.getElementById('school-publish').click()");
+  check(await evaluate("!window.syntheticWrites.some(write=>write.path.startsWith('publicSchools/'))"),'cancelled school publication writes nothing');
+  await evaluate("window.confirm=()=>true;document.getElementById('school-publish').click()");
+  await waitFor("document.getElementById('school-public-status').textContent.startsWith('Published')",'explicit school publication');
+  check(await evaluate("Object.keys(window.syntheticWrites.find(write=>write.path.startsWith('publicSchools/')).data).sort().join(',')==='countryCode,name'"),'public school copy contains no student metadata');
+  await evaluate("document.getElementById('school-name').value='Renamed Published School';document.getElementById('school-country').value='RO';document.getElementById('school-form').requestSubmit()");
+  await waitFor("window.syntheticWrites.some(write=>write.path.startsWith('publicSchools/')&&write.data.name==='Renamed Published School'&&write.data.countryCode==='RO')",'published rename/country synchronization');
+  await evaluate("document.getElementById('school-active').checked=false;document.getElementById('school-form').requestSubmit()");
+  await waitFor("window.syntheticDeletes.some(key=>key.startsWith('publicSchools/'))&&!document.getElementById('school-public-status').textContent.startsWith('Published')",'deactivation removes public copy');
+  check(await evaluate("document.getElementById('school-publish').disabled"),'inactive school cannot be published');
   await evaluate("document.getElementById('logout').click()");
   await waitFor("document.getElementById('dashboard').hidden&&document.getElementById('school-editor').disabled",'existing sign out');
   check(await evaluate("document.getElementById('school-name').value===''&&document.getElementById('student-school').options.length===0"),'sign out clears private school editor');
   check(errors.length===0,'no unexpected JavaScript console errors throughout school management');
-  console.log(`PASS administrator module: ${checks} real Chrome initialization/Add school/save/sign-out checks`);
+  await navigate(`http://127.0.0.1:${server.address().port}/index.html`);
+  await waitFor("document.getElementById('international-schools').textContent==='0'&&document.getElementById('international-trials').textContent==='1'",'empty approved directory and actual trial count');
+  check(await evaluate("getComputedStyle(document.querySelector('.hero-title')).color==='rgb(243, 237, 224)'&&getComputedStyle(document.querySelector('.hero-slide')).backgroundImage.includes('mythological-entrance.svg')"),'existing hero artwork and text contrast preserved');
+  check(await evaluate("document.querySelectorAll('.international-country').length===0&&document.getElementById('international-directory-status').textContent.includes('after administrator approval')"),'empty directory remains compact and truthful');
+  await evaluate("window.syntheticSet('publicSchools/tr-a',{name:'Synthetic Türkiye School A',countryCode:'TR'});window.syntheticSet('publicSchools/tr-b',{name:'Synthetic Türkiye School B '+ 'x'.repeat(120),countryCode:'TR'});window.syntheticSet('publicSchools/ro',{name:'Synthetic Romania School',countryCode:'RO'});window.syntheticSet('publicSchools/gr',{name:'Synthetic Greece School',countryCode:'GR'});window.syntheticSet('trials/voting',{title:'Voting case',status:'verdict'});window.syntheticSet('trials/closed',{title:'Closed case',status:'closed'});document.getElementById('international-refresh').click()");
+  await waitFor("document.getElementById('international-schools').textContent==='4'&&document.getElementById('international-trials').textContent==='3'",'counts derive from public records');
+  check(await evaluate("document.getElementById('international-countries').textContent==='3'&&document.querySelectorAll('.international-country').length===3&&document.querySelectorAll('.international-country li').length===4"),'all approved schools grouped under their actual countries');
+  check(await evaluate("window.syntheticReads.every(key=>['publicSchools','trials'].includes(key))&&!document.querySelector('.international-court').textContent.includes('Synthetic Alias')"),'homepage never reads private profiles/directory or student metadata');
+  await waitFor("[...document.querySelectorAll('.international-country img')].every(img=>img.complete&&img.naturalWidth>0)",'local flags');
+  check(await evaluate("[...document.querySelectorAll('.international-country img')].every(img=>img.getAttribute('src').startsWith('flag-')&&img.alt.startsWith('Flag of '))"),'local flags have accessible alternative text');
+  for(const width of [320,375,768,1024,1280]){
+   await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:false});
+   check(await evaluate("document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll('.international-country')].every(el=>el.getBoundingClientRect().right<=innerWidth)"),'international council fits '+width+'px');
+   check(await evaluate("(()=>{const cards=[...document.querySelectorAll('.international-country')].map(el=>el.getBoundingClientRect());return innerWidth>800?cards.every(box=>Math.abs(box.top-cards[0].top)<1):cards.every((box,i)=>!i||box.top>=cards[i-1].bottom)})()"),'country card desktop/mobile arrangement '+width+'px');
+  }
+  check(await evaluate(`(()=>{const lum=c=>{const v=c.match(/[0-9.]+/g).slice(0,3).map(n=>{n=Number(n)/255;return n<=.04045?n/12.92:((n+.055)/1.055)**2.4});return .2126*v[0]+.7152*v[1]+.0722*v[2]};return [...document.querySelectorAll('.international-court h2,.international-country h3,.international-country li,.international-note,.international-statistics dt,.international-statistics dd')].every(el=>{let bg=el;while(bg&&getComputedStyle(bg).backgroundColor==='rgba(0, 0, 0, 0)')bg=bg.parentElement;const a=lum(getComputedStyle(el).color),b=lum(getComputedStyle(bg).backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5})})()`),'international text meets 4.5:1 contrast');
+  await evaluate("document.getElementById('international-refresh').focus()");check(await evaluate("document.activeElement.id==='international-refresh'&&getComputedStyle(document.activeElement).outlineStyle!=='none'"),'refresh supports keyboard focus');
+  await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});check(await evaluate("getComputedStyle(document.querySelector('.international-country')).animationName==='none'"),'international cards respect reduced motion');
+  await evaluate("window.syntheticSet('publicSchools/tr-a',null);window.syntheticSet('publicSchools/tr-b',null);window.syntheticSet('publicSchools/gr',null);window.syntheticSet('publicSchools/ro',{name:'Renamed Romanian Partner',countryCode:'RO'});document.getElementById('international-refresh').click()");
+  await waitFor("document.getElementById('international-schools').textContent==='1'",'one-country directory refresh');
+  check(await evaluate("document.querySelectorAll('.international-country').length===1&&document.getElementById('international-countries').textContent==='1'&&document.querySelector('.international-country li').textContent==='Renamed Romanian Partner'"),'renames/removals and one-country empty states');
+  await evaluate("window.syntheticFail=['publicSchools'];document.getElementById('international-refresh').click()");await waitFor("document.getElementById('international-directory-status').textContent.includes('unavailable')",'directory failure');check(await evaluate("document.getElementById('international-schools').textContent==='—'&&document.querySelectorAll('.international-country').length===0&&document.getElementById('international-trials').textContent==='3'"),'failed directory clears stale school data while trials remain accurate');
+  await evaluate("window.syntheticFail=['trials'];document.getElementById('international-refresh').click()");await waitFor("document.getElementById('international-trial-status').textContent.includes('unavailable')",'trial failure');check(await evaluate("document.getElementById('international-trials').textContent==='—'&&document.getElementById('international-schools').textContent==='1'"),'trial failure does not fabricate a count or hide approved partners');
+  check(errors.length===0,'no unexpected browser errors in administrator or public homepage');
+  console.log(`PASS administrator module: ${checks} real Chrome administrator initialization/school publication/homepage checks`);
  }finally{server.closeAllConnections();server.close();browser.kill('SIGTERM');for(const item of pending.values())clearTimeout(item.timer);setTimeout(()=>fs.rmSync(tmp,{recursive:true,force:true,maxRetries:3,retryDelay:100}),300).unref()}
 })().catch(error=>{console.error(error);process.exitCode=1});

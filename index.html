@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Modern Olympos — The Fictional Mythological Court</title>
-  <link rel="stylesheet" href="style.css?v=school-identity-1" />
+  <link rel="stylesheet" href="style.css?v=international-court-1" />
 </head>
 <body>
 
-  <main class="hero">
+  <main>
+  <section class="hero" aria-label="Welcome to Modern Olympos">
 
     <!-- Original local CC0 artwork; a single still avoids unnecessary motion. -->
     <div class="hero-slideshow" id="hero-slideshow" aria-hidden="true">
@@ -36,8 +37,27 @@
       <p class="hero-research-links"><a href="who-is-who.html">Explore the encyclopedia</a> · <a href="how-it-works.html">How It Works</a></p>
     </div>
 
+  </section>
+  <section class="international-court" aria-labelledby="international-title">
+    <div class="international-inner">
+      <p class="international-eyebrow">An international eTwinning collaboration</p>
+      <h2 id="international-title">Our International Court</h2>
+      <p class="international-intro">Three countries, different perspectives, one shared courtroom. Students from Türkiye, Romania and Greece explore mythology, challenge assumptions and seek justice together.</p>
+      <dl class="international-statistics" aria-label="Public collaboration statistics">
+        <div><dt>Countries</dt><dd id="international-countries">—</dd></div>
+        <div><dt>Partner Schools</dt><dd id="international-schools">—</dd></div>
+        <div><dt>Trials</dt><dd id="international-trials">—</dd></div>
+      </dl>
+      <p id="international-directory-status" class="international-note" role="status">Partner school information is not loaded yet.</p>
+      <div id="international-cards" class="international-cards"></div>
+      <p id="international-trial-status" class="international-note" role="status">Public trial total is not loaded yet.</p>
+      <button id="international-refresh" type="button">Refresh public information</button>
+      <noscript><p>Enable JavaScript to load approved partner schools and public trial totals.</p></noscript>
+    </div>
+  </section>
   </main>
 
   <script src="landing.js"></script>
+  <script type="module" src="international-client.js"></script>
 </body>
 </html>
