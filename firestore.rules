@@ -122,8 +122,9 @@ service cloud.firestore {
       && data.schoolName is string && data.schoolName.size() <= 160 && data.schoolName == school.name
       && data.countryCode in ['TR','RO','GR'] && data.countryCode == school.countryCode;
     }
-    allow get: if admin() || validAttribution(resource.data,true);
-    allow list: if admin();
+    // Public-view readers, including a signed-in teacher, never bypass visibility permission.
+    allow get: if validAttribution(resource.data,true);
+    allow list: if false;
     allow create, update: if admin() && validAttribution(request.resource.data,false);
     allow delete: if admin();
    }
