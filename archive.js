@@ -17,8 +17,9 @@ function renderArgument(container,data){
  container.append(article);
 }
 function renderTally(summary){
- const container=$('archive-verdict');container.replaceChildren();
+ const container=$('archive-verdict');container.replaceChildren();$('archive-outcome').textContent='';
  if(!reasoningReleased({status:'closed',verdictSummary:summary})){container.textContent='Voting is permanently closed. A valid final jury tally has not yet been published.';return}
+ $('archive-outcome').textContent=summary.guilty===summary.notGuilty?'Published votes are tied.':summary.guilty>summary.notGuilty?'Published vote majority: Guilty.':'Published vote majority: Not Guilty.';
  for(const [label,count,kind] of [['Guilty',summary.guilty,'guilty'],['Not Guilty',summary.notGuilty,'not-guilty'],['Total votes',summary.guilty+summary.notGuilty,'total']]){
   const block=node('div');block.className='archive-total '+kind;block.append(node('span',label),node('strong',String(count)));container.append(block);
  }
@@ -46,6 +47,7 @@ async function loadPublicReasoning(trial,current){
 }
 async function loadArchive(){
  const request=++archiveRequest,current=()=>request===archiveRequest;
+ $('print-case-file').disabled=true;$('archive-page').setAttribute('aria-busy','true');
  $('archive-list').replaceChildren();$('archive-detail').hidden=true;$('archive-browser').hidden=false;$('archive-back').hidden=true;$('archive-status').textContent='Loading completed trials…';$('archive-status').setAttribute('aria-busy','true');$('archive-refresh').disabled=true;
  try{
   const snapshot=await getDocsFromServer(query(collection(db,'trials'),where('status','==','closed')));if(!current())return;
@@ -66,7 +68,8 @@ async function loadArchive(){
   renderTally(trial.verdictSummary);$('archive-detail').hidden=false;await loadPublicReasoning(trial,current);if(!current())return;
   $('archive-status').textContent='Completed trial. Published arguments and teacher-approved anonymous reasoning are shown. Original ballots and identities remain private.';
  }catch(error){if(current())$('archive-status').textContent='Unable to load the archive. Check your connection and try again. '+(error.code||error.message)}
- finally{if(current()){$('archive-refresh').disabled=false;$('archive-status').setAttribute('aria-busy','false')}}
+ finally{if(current()){$('print-case-file').disabled=$('archive-detail').hidden;$('archive-page').setAttribute('aria-busy','false');$('archive-refresh').disabled=false;$('archive-status').setAttribute('aria-busy','false')}}
 }
+$('print-case-file').addEventListener('click',()=>{if(!$('archive-detail').hidden&&!$('print-case-file').disabled&&$('archive-page').getAttribute('aria-busy')!=='true')window.print()});
 $('archive-refresh').addEventListener('click',loadArchive);
 loadArchive();

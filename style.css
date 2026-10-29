@@ -922,3 +922,15 @@ a { color: inherit; }
 }
 @media(max-width:900px){.site-header{flex-wrap:wrap;row-gap:12px}.primary-nav{order:3;flex-basis:100%;flex-wrap:wrap;gap:12px 24px}}
 @media(max-width:600px){.site-header{padding:12px 16px;gap:14px}.site-header .site-emblem{width:42px;height:42px;flex-basis:42px}.site-header .auth-area{margin-left:auto}}
+
+/* Package B: still local hero artwork and restrained dossier adjustments. */
+.hero-slide{transition:none}.hero-overlay{background:radial-gradient(ellipse at center,rgba(10,15,20,.55),rgba(10,15,20,.79) 80%),rgba(10,15,20,.18)}
+.hero-content{max-width:780px;padding:48px 24px}.hero-title{line-height:1.05}.hero-description{line-height:1.75}
+.print-case-brand{display:none}.archive-print-actions{text-align:right}.archive-print-actions button{padding:.7rem 1rem;border:1px solid #e2bf83;border-radius:4px;background:#d9b871;color:#211d16;font:inherit;font-weight:600;cursor:pointer}
+.archive-print-actions button:disabled{opacity:.5;cursor:not-allowed}.archive-outcome{font-weight:600;color:#f0d299}
+.dossier{gap:26px;padding-top:30px;padding-bottom:30px}
+.dossier::before{background:linear-gradient(90deg,rgba(10,15,18,.28),rgba(10,15,18,.84) 26%,rgba(10,15,18,.86) 65%,rgba(10,15,18,.3)),url('courtroom-architecture.svg') center/cover no-repeat}
+.dossier .mugshot>img{inset:3px;width:calc(100% - 6px);height:calc(100% - 6px);object-fit:contain}
+.dossier .defendant-info h1{margin:.35rem 0 .6rem}
+@media(max-width:600px){.dossier{gap:18px 16px;padding:24px 16px}.hero-content{padding:32px 18px}.hero-title{font-size:clamp(2.2rem,12vw,3.8rem)}}
+@media(prefers-reduced-motion:reduce){.hero *{transition:none!important;animation:none!important}}

@@ -1,0 +1,24 @@
+/* Native print uses only the already-rendered public archive DOM; never fetches data. */
+@page{margin:16mm;size:auto}
+@media print{
+ html,body{height:auto!important;background:#fff!important;color:#171717!important;font:11pt/1.5 Georgia,'Times New Roman',serif!important}
+ body::before,body::after,.site-header,.archive-print-actions,button,form,nav,#archive-refresh,#archive-status,#archive-browser,#archive-back{display:none!important}
+ .archive-page{max-width:none!important;border:0!important;margin:0!important;padding:0!important;background:#fff!important;color:#171717!important;box-shadow:none!important}
+ .archive-page>h1,.archive-page>p{display:none!important}
+ .archive-page[aria-busy=true]::before{display:block;content:'The public case file is still loading. Please wait before printing.';color:#171717}
+ .archive-page[aria-busy=true] #archive-detail{display:none!important}
+ .print-case-brand{display:flex!important;align-items:center;gap:10px;padding-bottom:8mm;border-bottom:1px solid #8f794e;font-size:11pt;font-weight:bold;color:#3c3020}
+ .print-case-brand img{width:32px;height:32px;filter:brightness(.4)}
+ .archive-case-heading{padding:6mm 0!important;gap:5mm!important;break-after:avoid-page;border-bottom:1px solid #8f794e!important}
+ .archive-page h1,.archive-page h2,.archive-page h3,.archive-page h4{color:#30291e!important;line-height:1.25!important;break-after:avoid-page}
+ .archive-case-title h2{font-size:23pt!important}.archive-case-status,.archive-note{color:#444!important;font-size:9pt!important}
+ .archive-case-status{letter-spacing:.04em}.archive-verdict-section,.archive-jury{margin:7mm 0!important}
+ .archive-verdict{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:4mm!important}
+ .archive-page .archive-total{background:#fff!important;color:#171717!important;border:1px solid #8f794e!important;box-shadow:none!important;break-inside:avoid-page}
+ .archive-total span,.archive-total strong{color:#171717!important}.archive-total strong{font-size:24pt!important}.archive-outcome{font-weight:bold;color:#171717!important}
+ .archive-columns,.archive-reasoning{display:block!important}.archive-side{margin-top:8mm}.archive-side>h2,.archive-jury>h2{border-bottom:1px solid #8f794e;padding-bottom:2mm}
+ .archive-page .argument-card,.archive-page .reasoning-card{background:#fff!important;color:#171717!important;border:1px solid #aaa!important;border-left:3px solid #7d683f!important;margin:4mm 0!important;padding:4mm!important;box-shadow:none!important;break-inside:avoid-page;page-break-inside:avoid}
+ .archive-page .archive-argument-text,.archive-page .archive-alias,.archive-page .reasoning-text,.archive-page .reasoning-choice,.archive-page a{color:#171717!important;font-size:11pt!important}
+ p{orphans:3;widows:3}.archive-character-portrait{break-inside:avoid-page}.archive-character-portrait>img{object-fit:contain!important}
+ [hidden]{display:none!important}
+}

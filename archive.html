@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Modern Olympos — Completed Trials</title>
-  <link rel="stylesheet" href="style.css?v=mythological-dossier-1" />
+  <link rel="stylesheet" href="style.css?v=package-b-1" />
+  <link rel="stylesheet" href="archive-print.css?v=package-b-1" media="print">
 </head>
 <body class="marble-bg">
 
@@ -25,7 +26,7 @@
     </div>
   </header>
 
-  <main class="archive-page">
+  <main class="archive-page" id="archive-page" aria-busy="true">
     <h1>Completed Trials</h1>
     <p>Explore the mythological cases our classroom has completed. Arguments appear here only after teacher approval. <a href="court.html">Follow the active trial</a>.</p>
     <button id="archive-refresh" type="button">Refresh archive</button>
@@ -33,8 +34,10 @@
     <div id="archive-browser"><ul id="archive-list" aria-label="Completed trials"></ul></div>
     <p id="archive-back" hidden><a href="archive.html">← All completed trials</a></p>
     <section id="archive-detail" hidden aria-labelledby="archive-title">
+      <div class="print-case-brand"><img src="olympos-emblem.svg" width="40" height="40" alt=""><span>Modern Olympos · Completed Case File</span></div>
+      <p class="archive-print-actions"><button id="print-case-file" type="button" disabled>Print Case File</button></p>
       <div class="archive-case-heading"><div id="archive-portrait" class="trial-portrait archive-character-portrait">Ω</div><div class="archive-case-title"><p class="archive-case-status">Completed · Voting permanently closed</p><h2 id="archive-title"></h2></div></div><p id="archive-info"></p>
-      <section class="archive-verdict-section" aria-labelledby="archive-verdict-heading"><h2 id="archive-verdict-heading">Final Verdict</h2><div id="archive-verdict" class="archive-verdict" aria-label="Published final jury tally"></div><p class="archive-note">The published vote totals are final. Anonymous reasoning below is a teacher-approved selection and does not change these results.</p></section>
+      <section class="archive-verdict-section" aria-labelledby="archive-verdict-heading"><h2 id="archive-verdict-heading">Final Verdict</h2><div id="archive-verdict" class="archive-verdict" aria-label="Published final jury tally"></div><p id="archive-outcome" class="archive-outcome"></p><p class="archive-note">The published vote totals are final. Anonymous reasoning below is a teacher-approved selection and does not change these results.</p></section>
       <div class="archive-columns"><section class="archive-side archive-side-prosecution"><h2>Prosecution</h2><div id="archive-prosecution"></div></section><section class="archive-side archive-side-defense"><h2>Defense</h2><div id="archive-defense"></div></section></div>
       <section class="archive-jury" aria-labelledby="archive-jury-heading"><h2 id="archive-jury-heading">Jury’s Reasoning</h2><p class="archive-note">These copies were reviewed individually and may be edited to remove identifying details. Juror numbers are anonymous labels for this case only; they do not identify students or correspond to vote order.</p><div id="archive-reasoning" class="archive-reasoning" aria-live="polite"></div></section>
     </section>
