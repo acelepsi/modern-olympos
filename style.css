@@ -329,13 +329,13 @@ a { color: inherit; }
 }
 
 .dossier .mugshot {
-  width: 90px;
-  height: 90px;
-  min-width: 90px;
-  max-width: 90px;
-  min-height: 90px;
-  max-height: 90px;
-  flex: 0 0 90px;
+  width: 108px;
+  height: 108px;
+  min-width: 108px;
+  max-width: 108px;
+  min-height: 108px;
+  max-height: 108px;
+  flex: 0 0 108px;
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
@@ -822,7 +822,7 @@ a { color: inherit; }
 .archive-case-heading{display:flex;align-items:center;gap:20px}.archive-case-heading h2{min-width:0;overflow-wrap:anywhere}
 
 @media(max-width:600px){
-  .dossier .mugshot{width:72px;height:72px;min-width:72px;max-width:72px;min-height:72px;max-height:72px;flex-basis:72px}
+ .dossier .mugshot{width:84px;height:84px;min-width:84px;max-width:84px;min-height:84px;max-height:84px;flex-basis:84px}
 }
 
 /* Completed case file: archive-only contrast and structure, never court overrides. */
@@ -846,3 +846,51 @@ a { color: inherit; }
 .archive-page .reasoning-card.not-guilty{border-left:4px solid #8795e6}.archive-page .reasoning-card.not-guilty .reasoning-choice{color:#c7d1ff}
 #archive-browser #archive-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}#archive-browser #archive-list a{height:100%;padding:.8rem;border:1px solid #706044;border-radius:8px;box-sizing:border-box;background:#222631;margin:0}
 @media(max-width:720px){.archive-reasoning,#archive-browser #archive-list{grid-template-columns:1fr}.archive-verdict{gap:.4rem}.archive-total{padding:.65rem .35rem}.archive-total strong{font-size:1.9rem}.archive-total span{font-size:.82rem}}
+
+/* Courtroom experience: scoped to the live case, leaving archive styling intact. */
+.dossier .mugshot{border:2px solid #b08d45;box-shadow:0 0 0 4px rgba(176,141,69,.1),0 6px 18px rgba(0,0,0,.3)}
+.dossier .defendant-info h1{font-size:clamp(1.8rem,3vw,2.5rem);line-height:1.15;margin:.25rem 0 .6rem;overflow-wrap:anywhere}
+.dossier .defendant-info .charge-label{color:#d9b871}
+.dossier .defendant-info .charge{line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch}
+.trial-progress{padding:1rem 2rem;background:#221f1c;border-bottom:1px solid var(--line-on-dark)}
+.trial-progress ol{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.4rem;padding:0;margin:0 auto;max-width:850px}
+.trial-progress li{position:relative;display:flex;align-items:center;gap:.65rem;padding:.65rem;border:1px solid #706858;border-radius:6px;color:#d5cec1}
+.trial-progress li:not(:last-child)::after{content:'→';position:absolute;right:-1.2rem;color:#d9b871}
+.trial-progress small{display:block;font-size:.8rem;margin-top:.2rem;font-family:'Source Sans 3',sans-serif}
+.trial-progress .phase-number{display:grid;place-items:center;flex:0 0 1.8rem;height:1.8rem;border:1px solid currentColor;border-radius:50%}
+.trial-progress [data-state=active]{background:#40341e;border:2px solid #d9b871;color:#fff1c9;font-weight:600}
+.trial-progress [data-state=completed]{color:#e2dfd5;border-color:#aaa18e}
+.trial-progress [data-state=completed] .phase-number{background:#e2dfd5;color:#29251e}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.court-tabs{display:flex;padding:.75rem 1rem;gap:.6rem;background:#221f1c}
+.court-tabs button{flex:1;padding:.75rem;border:1px solid #b9ac91;border-radius:4px;background:#29251e;color:#f3ede0;font:inherit;font-weight:600;cursor:pointer}
+.court-tabs #prosecution-tab[aria-selected=true]{background:#7a1f2b;border-color:#e6a3ac}
+.court-tabs #defense-tab[aria-selected=true]{background:#202a5c;border-color:#b9c6ff}
+.court-tabs button[aria-selected=true]{box-shadow:inset 0 -3px #d9b871}
+.court-tabs button:focus-visible,.court-dialog button:focus-visible,.column[role=tabpanel]:focus-visible{outline:3px solid #e2bf83;outline-offset:3px}
+.character-count{margin:.15rem 0 .6rem;color:inherit;font-size:.85rem;line-height:1.5}
+.character-count[data-state=short]{font-weight:600}
+.character-count[data-state=over]{color:#ffb7c3;font-weight:700}
+.submission-badge,.returned-count{display:inline-block;margin:.35rem .6rem;padding:.25rem .6rem;border:1px solid currentColor;border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.85rem;font-weight:600;line-height:1.4}
+.submission-badge[data-status=draft]{background:#e8dfc9;color:#3c352a}
+.submission-badge[data-status=pending]{background:#fff0c7;color:#604600}
+.submission-badge[data-status=returned],.returned-count{background:#f9e1e5;color:#7a1f2b}
+.submission-badge[data-status=published]{background:#e3e7ff;color:#202a5c}
+.teacher-feedback{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+.returned-feedback{background:#f9e1e5;color:#54141f;border-left:4px solid #7a1f2b;padding:.8rem 1rem;border-radius:4px}
+.my-submission>p{white-space:pre-wrap;line-height:1.6}
+.court-dialog{box-sizing:border-box;width:min(640px,calc(100% - 2rem));max-height:calc(100dvh - 2rem);padding:1.6rem;border:1px solid #d9b871;border-radius:10px;background:#221f1c;color:#f3ede0;box-shadow:var(--shadow-deep);overflow-y:auto}
+.court-dialog::backdrop{background:rgba(10,9,8,.82)}
+.court-dialog h2,.court-dialog h3{color:#e2bf83;margin:0 0 1rem}
+.court-dialog h3{font-size:1.15rem;margin-top:1.2rem}
+.court-dialog .ballot-choice{font-size:1.1rem}.court-dialog .ballot-reason{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;background:#171512;padding:1rem;border-radius:5px}
+#vote-final-warning{padding:.8rem;border-left:3px solid #d9b871;color:#fff1c9;line-height:1.5}
+.dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:.8rem;margin-top:1.3rem}
+.dialog-actions button{font:inherit;cursor:pointer;border:1px solid #d9b871;background:transparent;color:#f3ede0;padding:.7rem 1rem;border-radius:4px}
+.dialog-actions [data-confirm-submit]{background:#d9b871;color:#221f1c;font-weight:700}
+@media(max-width:600px){
+ .dossier{padding:20px 16px;gap:16px;align-items:flex-start}
+ .trial-progress{padding:.8rem .5rem}.trial-progress ol{gap:1rem}.trial-progress li{padding:.5rem .3rem;gap:.3rem;font-size:.9rem;flex-direction:column;text-align:center}.trial-progress .phase-number{flex-basis:1.4rem;width:1.4rem;height:1.4rem}.trial-progress small{font-size:.72rem}.trial-progress li:not(:last-child)::after{right:-.95rem;top:50%;transform:translateY(-50%)}
+ .court-dialog{padding:1rem}.dialog-actions button{flex:1}
+}
+@media(prefers-reduced-motion:reduce){.trial-room *{scroll-behavior:auto!important}}

@@ -1,3 +1,4 @@
+import {renderTrialProgress,updateCourtCounters,setupCourtCounters,setupCourtTabs,createVoteConfirmation} from './court-ui.js';
 import {chronologicalSubmissions,validEvidence} from './case-content.js';
 // =================================================================
 // MODERN OLYMPOS — app.js (public-first, modal-login)
@@ -57,9 +58,13 @@ const el = {
 };
 
 // -----------------------------------------------------------------
-// Modal open/close — including the inline "Log in" links buried in
-// the locked-notice text under each composer.
+// Student login modal.
 // -----------------------------------------------------------------
+const courtTabs=setupCourtTabs();
+setupCourtCounters();
+const voteConfirmation=createVoteConfirmation(document.getElementById('vote-confirmation'));
+let pendingVoteReview=null;
+
 function openModal() {
   el.overlay.hidden = false;
   el.codeInput.value = "";
@@ -111,6 +116,9 @@ function isCurrentContext(context) {
 }
 // A new generation also rejects completions after switching away and back.
 function clearPrivateContext() {
+  voteConfirmation.cancel();
+  pendingVoteReview=null;
+  document.getElementById('cast-vote').disabled=false;
   contextGeneration++;
   voteRevision++;
   ballotWriteInFlight = false;
@@ -126,6 +134,9 @@ function clearPrivateContext() {
     form.querySelectorAll('button').forEach(button => { button.disabled = false; });
     document.getElementById(side + '-feedback').textContent = '';
   }
+  updateCourtCounters();
+  document.getElementById('returned-count').hidden=true;
+  document.getElementById('returned-count').textContent='';
   el.passwordInput.value = '';
   setLoginStatus('', '');
   el.voteJustification.value = '';
@@ -249,14 +260,14 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
   if (title) title.textContent = activeTrialId ? "Loading trial…" : "No active trial";
   if (charge) {charge.textContent = "";charge.hidden=true;}
   renderPortrait(document.getElementById("mugshot"),null);
-  setTrialStatus("closed");
+  setTrialStatus("closed",false);
   if (activeTrialId) {
     unsubscribeTrial = onSnapshot(doc(db, "trials", activeTrialId), trialSnap => {
       if (revision !== trialRevision) return;
       if (!trialSnap.exists()) {
         if (title) title.textContent = "Trial unavailable";
         renderPortrait(document.getElementById("mugshot"),null);
-        currentTrial.verdictSummary=null;setTrialStatus("closed");
+        currentTrial.verdictSummary=null;setTrialStatus("closed",false);
         document.getElementById("court-status").textContent="The selected trial is unavailable. Please ask your teacher.";
         return;
       }
@@ -266,13 +277,13 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
       if (title) title.textContent = data.title || activeTrialId;
       renderPortrait(document.getElementById("mugshot"),data.portraitUrl,`Portrait for ${data.title||activeTrialId}`);
       if (charge) {charge.textContent = typeof data.charge==='string'?data.charge:"";charge.hidden=!charge.textContent;}
-      setTrialStatus(data.status || "closed");
+      setTrialStatus(data.status || "closed",['trial','verdict','closed'].includes(data.status));
       refreshMyVote();
-    }, err => { if (revision !== trialRevision)return;clearPrivateContext();renderPortrait(document.getElementById("mugshot"),null);currentTrial.verdictSummary=null;setTrialStatus("closed");document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
+    }, err => { if (revision !== trialRevision)return;clearPrivateContext();renderPortrait(document.getElementById("mugshot"),null);currentTrial.verdictSummary=null;setTrialStatus("closed",false);document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
   }
   subscribeAssignmentForActiveTrial(auth.currentUser, authRevision);
   refreshSubmissionListeners();
-}, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();renderPortrait(document.getElementById("mugshot"),null);activeTrialId=null;currentTrial.verdictSummary=null;setTrialStatus("closed");refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
+}, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();renderPortrait(document.getElementById("mugshot"),null);activeTrialId=null;currentTrial.verdictSummary=null;setTrialStatus("closed",false);refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
 
 function renderIdentity() {
   document.getElementById("account-status").textContent=!auth.currentUser?"":!currentProfile?"Student access is not available. Ask your teacher or sign out to switch accounts.":currentProfile.active!==true?"Participation is paused. You may read public content; ask your teacher to resume access.":"";
@@ -336,13 +347,13 @@ function applyComposerVisibility(session) {
 // -----------------------------------------------------------------
 let currentTrial = { status: "trial" };
 
-function setTrialStatus(status) {
+function setTrialStatus(status,known=true) {
+  renderTrialProgress(known?status:null);
+  if(status!=='verdict')voteConfirmation.cancel();
   currentTrial.status = status;
   applyJuryVisibility(lastKnownSession);
   applyComposerVisibility(lastKnownSession);
   renderPublicVerdict();
-  const pill = document.getElementById("status-pill");
-  if (pill) { pill.textContent = status; pill.dataset.status = status; }
 }
 
 let lastKnownSession = null;
@@ -368,6 +379,7 @@ function renderPublicVerdict() {
 }
 function applyJuryVisibility(session) {
   lastKnownSession = session;
+  if(session?.role!=='juror'||alreadyVoted)voteConfirmation.cancel();
   const canVote = !!(session && session.role === 'juror' && activeTrialId && currentTrial.status === 'verdict' && !alreadyVoted && !checkingVote && !ballotLookupFailed);
   el.juryVoteForm.hidden = !canVote;
   retryBallot.hidden = !(session?.role === 'juror' && ballotLookupFailed && !checkingVote && currentTrial.status === 'verdict');
@@ -414,21 +426,27 @@ el.voteChoiceButtons.forEach((btn) => {
 
 el.juryVoteForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const reason=el.voteJustification.value.trim();
-  const user=auth.currentUser;
-  if(!selectedChoice || !['guilty','not-guilty'].includes(selectedChoice))return alert('Select Guilty or Not Guilty.');
-  if(reason.length<15 || reason.length>2000)return alert('Write a reason between 15 and 2000 characters.');
-  if(!user || !activeTrialId || currentTrial.status!=='verdict' || currentAssignment?.role!=='juror' || alreadyVoted || checkingVote || ballotLookupFailed)return;
-  if(!confirm('Your final vote cannot be changed. Submit now?'))return;
+  if(pendingVoteReview||ballotWriteInFlight)return;
+  const reason=el.voteJustification.value.trim(),choice=selectedChoice;
+  if(!['guilty','not-guilty'].includes(choice)){voteStatus.textContent='Select Guilty or Not Guilty.';return}
+  if(reason.length<15 || reason.length>2000){voteStatus.textContent='Write a reason between 15 and 2000 characters.';el.voteJustification.focus();return}
   const context=captureContext();
+  const eligible=()=>isCurrentContext(context)&&auth.currentUser&&activeTrialId&&currentTrial.status==='verdict'&&currentProfile?.active===true&&currentProfile?.accountType==='student'&&currentAssignment?.role==='juror'&&!alreadyVoted&&!checkingVote&&!ballotLookupFailed;
+  if(!eligible())return;
+  const review={context};pendingVoteReview=review;
+  document.getElementById('cast-vote').disabled=true;
+  let approved=false;
+  try{approved=await voteConfirmation.ask(choice==='guilty'?'Guilty':'Not Guilty',reason)}
+  finally{if(pendingVoteReview===review){pendingVoteReview=null;document.getElementById('cast-vote').disabled=false}}
+  if(!approved||!eligible())return;
   voteRevision++;
   ballotWriteInFlight=true;
   ballotError='';
   checkingVote=true;applyJuryVisibility(lastKnownSession);
   try{
-    await setDoc(doc(db,'trials',context.trialId,'votes',context.uid),{choice:selectedChoice,reason,castAt:serverTimestamp()});
+    await setDoc(doc(db,'trials',context.trialId,'votes',context.uid),{choice,reason,castAt:serverTimestamp()});
     if(!isCurrentContext(context))return;
-    alreadyVoted=true;el.voteJustification.value='';selectedChoice=null;
+    alreadyVoted=true;el.voteJustification.value='';selectedChoice=null;updateCourtCounters();
     el.voteChoiceButtons.forEach(b=>{b.classList.remove('selected');b.setAttribute('aria-pressed','false')});
     document.getElementById('jury-selection-status').textContent='No verdict selected.';
     voteStatus.textContent='Your final vote was recorded.';
@@ -455,18 +473,22 @@ function renderMine(){
  const panel=document.getElementById('my-submissions'),list=document.getElementById('my-submissions-list');
  if(!panel||!list)return;
  const allowed=auth.currentUser&&currentProfile?.active===true&&currentProfile?.accountType==='student';
- panel.hidden=!allowed;list.replaceChildren();if(!allowed)return;
+ panel.hidden=!allowed;list.replaceChildren();
+ const returned=document.getElementById('returned-count'),count=allowed?mySubmissions.filter(post=>post.status==='returned').length:0;returned.hidden=!count;returned.textContent=count?`${count} returned for revision`:'';
+ if(!allowed)return;
  if(!mySubmissions.length){list.textContent='No submissions for this trial yet.';return;}
  for(const post of mySubmissions){
   const wrap=document.createElement('div');wrap.className='my-submission';
-  const title=document.createElement('strong');title.textContent=`${post.section} · ${post.status}`;
-  const para=document.createElement('p');para.textContent=post.text;wrap.append(title,para);
-  if(post.feedback){const feedback=document.createElement('p');feedback.textContent='Teacher feedback: '+post.feedback;wrap.append(feedback)}
+  const title=document.createElement('strong');title.textContent=post.section==='defense'?'Defense':'Prosecution';
+  const badge=document.createElement('span');badge.className='submission-badge';badge.dataset.status=['draft','pending','returned','published'].includes(post.status)?post.status:'unknown';badge.textContent=({draft:'Private draft',pending:'Pending review',returned:'Returned for revision',published:'Published'})[post.status]||'Status unavailable';
+  const para=document.createElement('p');para.textContent=post.text;wrap.append(title,badge,para);
+  if(post.feedback){const feedback=document.createElement('p');feedback.className=post.status==='returned'?'teacher-feedback returned-feedback':'teacher-feedback';feedback.textContent='Teacher feedback: '+post.feedback;wrap.append(feedback)}
   if(['draft','returned'].includes(post.status)){
    const edit=document.createElement('button');edit.type='button';edit.textContent='Edit';edit.onclick=()=>{
-    const form=document.getElementById(post.section+'-composer');if(form.hidden){alert('Your current role or the trial phase does not allow editing this submission.');return}
+    const form=document.getElementById(post.section+'-composer');if(form.hidden){document.getElementById('account-status').textContent='Your current role or the trial phase does not allow editing this submission.';return}
     form.dataset.editId=post.id;form.querySelector('textarea').value=post.text;form.querySelector('input[type=url]').value=post.evidenceUrl||'';
-    form.scrollIntoView({behavior:'smooth'});
+    updateCourtCounters();courtTabs.select(post.section);
+    form.scrollIntoView({behavior:'smooth'});form.querySelector('textarea').focus();
    };wrap.append(edit);
   }
   list.append(wrap);
@@ -519,7 +541,7 @@ for(const side of ['prosecution','defense']){
     await addDoc(collection(db,'trials',context.trialId,'submissions'),{trialId:context.trialId,authorUid:user.uid,authorName:currentProfile.displayName||'Student',section:side,text:body,evidenceUrl:link,status,feedback:'',createdAt:serverTimestamp()});
    }
    if(!isCurrentContext(context))return;
-   form.reset();delete form.dataset.editId;feedback.textContent=status==='draft'?'Draft saved privately.':'Sent to administrator for approval.';
+   form.reset();updateCourtCounters();delete form.dataset.editId;feedback.textContent=status==='draft'?'Draft saved privately.':'Sent to administrator for approval.';
   }catch(err){if(!isCurrentContext(context))return;feedback.textContent='Save failed: '+(err.code||err.message);console.error(err)}finally{pendingSubmissionSaves.delete(saveKey);if(isCurrentContext(context))buttons.forEach(x=>x.disabled=false)}
  };
  form.addEventListener('submit',e=>{e.preventDefault();return save('pending')});

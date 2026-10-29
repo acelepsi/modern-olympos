@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { ACCOUNTS, PROJECT, PASSWORD } = require('./local-settings.cjs');
 const ROOT = path.join(__dirname, '..');
-const FILES = new Set(['index.html', 'court.html', 'admin.html', 'archive.html', 'who-is-who.html', 'style.css', 'landing.js', 'app.js', 'admin.js', 'firebase-client.js', 'student-accounts.js','portraits.js','jury-reasoning.js','case-content.js', 'archive.js']);
+const FILES = new Set(['index.html', 'court.html', 'admin.html', 'archive.html', 'who-is-who.html', 'style.css', 'landing.js', 'app.js', 'admin.js', 'firebase-client.js', 'student-accounts.js','portraits.js','jury-reasoning.js','case-content.js','court-ui.js', 'archive.js']);
 const CSP = "connect-src http://127.0.0.1:9099 http://127.0.0.1:8080 ws://127.0.0.1:8080; object-src 'none'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'";
 function decorate(html) {
   // Insert before application modules, on every HTML page, so navigation cannot lose local mode.
