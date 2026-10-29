@@ -22,7 +22,7 @@ export async function saveSchoolAffiliation(uid,schoolId,publish,api){
  if(schoolId){const snapshot=await api.read(['schools',schoolId]);if(!api.current())throw Error('Administrator context changed.');if(!snapshot.exists())throw Error('School no longer exists.');school=validateSchool(snapshot.data());if(!school.active&&(publish||profile.data().schoolId!==schoolId))throw Error('Inactive schools cannot receive new assignments or public display.');}
  const token=api.newToken();
  // Revocation is the first acknowledged write. Later failures leave visibility off.
- await api.assign(uid,{schoolId,publicSchool:false,schoolConsentVersion:token});
+ await api.assign(uid,{schoolId,publicSchool:false,schoolConsentVersion:token},publish?{schoolId:profile.data().schoolId||'',publicSchool:profile.data().publicSchool===true,schoolConsentVersion:profile.data().schoolConsentVersion||''}:null);
  if(!publish)return {published:false,count:0};
  if(!api.current())throw Error('Context changed; affiliation remains private.');
  const trials=await api.trials();let count=0;
@@ -45,5 +45,14 @@ export async function enableSchoolPermission(uid,schoolId,token,school,api){
   const profileRef=api.profileRef(uid),schoolRef=api.schoolRef(schoolId),profile=await transaction.get(profileRef),latest=await transaction.get(schoolRef);
   if(!api.current()||!profile.exists()||profile.data().schoolId!==schoolId||profile.data().schoolConsentVersion!==token||profile.data().publicSchool!==false||!latest.exists()||latest.data().active!==true||latest.data().name!==school.name||latest.data().countryCode!==school.countryCode)throw Error('Affiliation changed; public display was not enabled.');
   transaction.update(profileRef,{publicSchool:true});
+ });
+}
+
+export async function reserveSchoolPermission(uid,data,expected,api){
+ return api.run(async transaction=>{
+  const ref=api.profileRef(uid),profile=await transaction.get(ref);
+  if(!api.current()||!profile.exists()||profile.data().accountType!=='student')throw Error('Student or administrator context changed.');
+  if(expected&&((profile.data().schoolConsentVersion||'')!==expected.schoolConsentVersion||(profile.data().schoolId||'')!==expected.schoolId||(profile.data().publicSchool===true)!==expected.publicSchool))throw Error('Affiliation changed before publication; reload before enabling public display.');
+  transaction.update(ref,data);
  });
 }

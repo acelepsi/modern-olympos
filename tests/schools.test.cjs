@@ -60,6 +60,14 @@ test('old school authorization cannot enable controls after account switching',a
 });
 
 test('failed withdrawal is visibly unconfirmed rather than claiming visibility is disabled',async()=>{
- const h=manager();await h.callbacks[0]({uid:'teacher'});h.get('affiliation-student').value='private-student';h.get('affiliation-student').handlers.change();h.get('affiliation-school').value='school-a';h.get('affiliation-public').checked=false;h.api.getDocFromServer=async ref=>snapshot(ref[0]==='schools'?school:{accountType:'student',schoolId:'school-a',publicSchool:true});h.api.updateDoc=async()=>{throw {code:'unavailable'}};
+ const h=manager();await h.callbacks[0]({uid:'teacher'});h.get('affiliation-student').value='private-student';h.get('affiliation-student').handlers.change();h.get('affiliation-school').value='school-a';h.get('affiliation-public').checked=false;h.api.getDocFromServer=async ref=>snapshot(ref[0]==='schools'?school:{accountType:'student',schoolId:'school-a',publicSchool:true});h.api.runTransaction=async()=>{throw {code:'unavailable'}};
  await h.get('affiliation-form').handlers.submit({preventDefault(){}});assert.equal(h.get('affiliation-public').indeterminate,true);assert.match(h.get('school-feedback').textContent,/do not assume withdrawal succeeded/);assert.doesNotMatch(h.get('school-feedback').textContent,/Public school display is disabled/);
+});
+
+test('publication reservation cannot overwrite a withdrawal that happened during its preflight',async()=>{
+ let profile={accountType:'student',schoolId:'school-a',publicSchool:false,schoolConsentVersion:'withdrawal-token'},writes=0;
+ const a={current:()=>true,profileRef:()=> 'profile',run:callback=>callback({get:async()=>snapshot(profile),update:(_,data)=>{writes++;profile={...profile,...data}}})};
+ const expected={schoolId:'school-a',publicSchool:true,schoolConsentVersion:'old-token'};
+ await assert.rejects(c.reserveSchoolPermission('uid',{publicSchool:false,schoolConsentVersion:'stale-publish-token'},expected,a),/before publication/);assert.equal(writes,0);assert.equal(profile.schoolConsentVersion,'withdrawal-token');
+ await c.reserveSchoolPermission('uid',{publicSchool:false,schoolConsentVersion:'new-withdrawal-token'},null,a);assert.equal(writes,1);assert.equal(profile.publicSchool,false);
 });
