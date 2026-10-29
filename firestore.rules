@@ -154,6 +154,31 @@ service cloud.firestore {
     allow delete: if false;
    }
   }
+
+  match /encyclopedia/{characterId} {
+   function validEntry() { return characterId.matches('^[A-Za-z0-9_-]{1,80}$')
+     && request.resource.data.keys().hasOnly(['name','tradition','introduction','biography','actions','perspectives','portraitUrl','sources','relatedTrialId','status'])
+     && request.resource.data.keys().hasAll(['name','tradition','introduction','biography','actions','perspectives','portraitUrl','sources','relatedTrialId','status'])
+     && request.resource.data.name is string && request.resource.data.name.trim().size() > 0 && request.resource.data.name.size() <= 100
+     && request.resource.data.tradition is string && request.resource.data.tradition.trim().size() > 0 && request.resource.data.tradition.size() <= 80
+     && request.resource.data.introduction is string && request.resource.data.introduction.trim().size() > 0 && request.resource.data.introduction.size() <= 500
+     && request.resource.data.biography is string && request.resource.data.biography.size() <= 8000
+     && request.resource.data.actions is string && request.resource.data.actions.size() <= 8000
+     && request.resource.data.perspectives is string && request.resource.data.perspectives.size() <= 8000
+     && request.resource.data.sources is string && request.resource.data.sources.size() <= 4000
+     && request.resource.data.portraitUrl is string && request.resource.data.portraitUrl.size() <= 2000
+     && (request.resource.data.portraitUrl == '' || request.resource.data.portraitUrl.matches('^https://([A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:]+\\])(:[0-9]{1,5})?([/?#][^\\s]*)?$'))
+     && request.resource.data.relatedTrialId is string && request.resource.data.relatedTrialId.size() <= 80
+     && (request.resource.data.relatedTrialId == '' ||
+       (request.resource.data.relatedTrialId.matches('^[a-z0-9-]{1,80}$') && exists(/databases/$(database)/documents/trials/$(request.resource.data.relatedTrialId))))
+     && request.resource.data.status in ['draft','published']
+     && (request.resource.data.status == 'draft' ||
+       (request.resource.data.biography.trim().size() > 0 && request.resource.data.actions.trim().size() > 0 &&
+        request.resource.data.perspectives.trim().size() > 0 && request.resource.data.sources.trim().size() > 0)); }
+   allow get, list: if admin() || resource.data.status == 'published';
+   allow create, update: if admin() && validEntry();
+   allow delete: if admin();
+  }
   match /arguments/{id} { allow read: if true; allow write: if false; }
   match /verdicts/{id} { allow read, write: if false; }
   match /{document=**} { allow read, write: if false; }

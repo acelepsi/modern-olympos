@@ -87,7 +87,7 @@ try{
         for(const step of phoneDoc.querySelectorAll('.trial-progress li')){const box=step.getBoundingClientRect(),label=step.lastElementChild.getBoundingClientRect();check(label.left>=box.left-.1&&label.right<=box.right+.1,'phase label stays inside compact step at '+width)}
         check(mb.right<=tb.left&&mb.bottom<=db.bottom,'portrait stays separate from long title '+width);
       }
-      portrait.textContent='Ω';check(portrait.getBoundingClientRect().width===(width<=600?96:width<=1100?116:136),'missing portrait retains responsive frame '+width);
+      portrait.textContent='Ω';check(portrait.getBoundingClientRect().width===(width<=600?104:width<=1100?128:152),'missing portrait retains responsive frame '+width);
       const frameStyle=phone.contentWindow.getComputedStyle(portrait,'::after');check(frameStyle.pointerEvents==='none'&&frameStyle.backgroundImage.includes('data:image/svg+xml'),'local ornamental frame stays decorative '+width);
       const titleColor=phone.contentWindow.getComputedStyle(title).color,chargeColor=phone.contentWindow.getComputedStyle(phoneDoc.getElementById('defendant-charge')).color;
       // Bound text against a deliberately brighter surface than the dark architecture overlay.
@@ -125,8 +125,9 @@ try{
     renderPortrait(frame,'https://synthetic.invalid/medusa.svg','Synthetic Medusa portrait');
     const img=frame.firstElementChild;await new Promise(done=>setTimeout(done,100));check(img.complete&&img.naturalWidth===4096,'oversized synthetic image loaded');
     const box=frame.getBoundingClientRect(),picture=img.getBoundingClientRect(),style=getComputedStyle(img);
-    const expected=page==='court'?(innerWidth<=600?96:innerWidth<=1100?116:136):(frame.classList.contains('archive-thumbnail')?48:76);
-    check(Math.abs(box.width-expected)<0.1&&Math.abs(box.height-expected)<0.1,'fixed frame '+expected+'px');
+    const expected=page==='court'?(innerWidth<=600?104:innerWidth<=1100?128:152):(frame.classList.contains('archive-thumbnail')?48:76);
+    const expectedHeight=page==='court'?(innerWidth<=600?96:innerWidth<=1100?116:136):expected;
+    check(Math.abs(box.width-expected)<0.1&&Math.abs(box.height-expectedHeight)<0.1,'fixed frame '+expected+'px');
     check(picture.left>=box.left-0.1&&picture.top>=box.top-0.1&&picture.right<=box.right+0.1&&picture.bottom<=box.bottom+0.1,'image stays inside frame');
     check(style.position==='absolute'&&style.objectFit===(page==='court'?'contain':'cover')&&style.objectPosition==='50% 50%','centered cover resists generic image positioning');
     check(box.width===before.width&&box.height===before.height,'no load size shift');
