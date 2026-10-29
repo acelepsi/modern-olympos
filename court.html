@@ -4,14 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Modern Olympos — The Mythological Court</title>
-  <link rel="stylesheet" href="style.css?v=courtroom-experience-1" />
+  <link rel="stylesheet" href="style.css?v=mythological-dossier-1" />
 </head>
 <body class="marble-bg">
 
   <!-- ================= SITE HEADER ================= -->
   <header class="site-header">
     <a href="index.html" class="brand">
-      <div class="seal-mini">Ω</div>
+      <img class="site-emblem" src="olympos-emblem.svg" width="48" height="48" alt="" aria-hidden="true" />
       <span class="wordmark">Modern Olympos</span>
     </a>
 
@@ -73,13 +73,12 @@
         <h1 id="defendant-name">Loading trial…</h1>
         <div class="charge" id="defendant-charge"></div>
       </div>
-
-    </header>
-
     <nav class="trial-progress" aria-label="Trial progress">
       <ol><li id="phase-trial" data-state="upcoming"><span class="phase-number" aria-hidden="true">1</span><span>Arguments<small data-phase-state>Upcoming</small></span></li><li id="phase-verdict" data-state="upcoming"><span class="phase-number" aria-hidden="true">2</span><span>Verdict<small data-phase-state>Upcoming</small></span></li><li id="phase-closed" data-state="upcoming"><span class="phase-number" aria-hidden="true">3</span><span>Closed<small data-phase-state>Upcoming</small></span></li></ol>
       <p id="trial-phase-status" class="sr-only" role="status">Trial phase unavailable.</p>
     </nav>
+    </header>
+
     <div id="court-tabs" class="court-tabs" role="tablist" aria-label="Arguments by side" hidden><button type="button" id="prosecution-tab" role="tab" aria-controls="prosecution-panel" aria-selected="true">Prosecution</button><button type="button" id="defense-tab" role="tab" aria-controls="defense-panel" aria-selected="false" tabindex="-1">Defense</button></div>
     <div class="trial-floor">
 

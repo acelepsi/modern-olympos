@@ -144,3 +144,8 @@ test('secondary provisioning uses memory-only Auth even on hosted production pag
  assert.equal(h.calls[0][2],'secondary');assert.equal(h.calls[1][0],'initializeAuth');assert.equal(h.calls[1][2].persistence,h.persistence);
  assert.ok(!h.calls.some(call=>call[0]==='getAuth'));
 });
+
+for(const filename of ['olympos-emblem.svg','portrait-frame.svg','courtroom-architecture.svg'])test('local SVG artwork is served with correct MIME: '+filename,async()=>{
+ const server=createLocalServer();server.listen(0,'127.0.0.1');await once(server,'listening');
+ try{const response=await request(server.address().port,'/'+filename);assert.equal(response.status,200);assert.match(response.headers['content-type'],/image\/svg\+xml/);assert.match(response.body,/<svg/)}finally{await new Promise(resolve=>server.close(resolve))}
+});

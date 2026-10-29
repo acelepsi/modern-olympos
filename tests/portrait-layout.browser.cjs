@@ -5,7 +5,8 @@ const {spawnSync}=require('node:child_process');const {pathToFileURL}=require('n
 const root=path.join(__dirname,'..');
 const chrome=[process.env.CHROME_BIN,'/usr/lib/chromium/chromium','chromium','google-chrome','google-chrome-stable'].filter(Boolean).find(bin=>spawnSync(bin,['--version'],{encoding:'utf8'}).status===0);
 if(!chrome)throw Error('Install Chrome/Chromium or set CHROME_BIN to run this optional layout test.');
-const css=fs.readFileSync(path.join(root,'style.css'),'utf8');
+const dataAsset=name=>'data:image/svg+xml,'+encodeURIComponent(fs.readFileSync(path.join(root,name),'utf8'));
+const css=fs.readFileSync(path.join(root,'style.css'),'utf8').replace(/url\('([^']+\.svg)'\)/g,(_,name)=>'url("'+dataAsset(name)+'")');
 const helper=fs.readFileSync(path.join(root,'portraits.js'),'utf8').replace(/^export /gm,'');
 const reasoningHelper=fs.readFileSync(path.join(root,'jury-reasoning.js'),'utf8').replace(/^export /gm,'');
 const caseHelper=fs.readFileSync(path.join(root,'case-content.js'),'utf8').replace(/^export /gm,'');
@@ -70,12 +71,30 @@ try{
     }
     document.getElementById('dossier').scrollIntoView();
     check(document.documentElement.scrollWidth<=innerWidth,'courtroom fits viewport without horizontal scrolling');
-    const phone=document.createElement('iframe');phone.style.cssText='position:fixed;left:-10000px;width:320px;height:900px;border:0';document.body.append(phone);
-    const phoneDoc=phone.contentDocument;phoneDoc.open();phoneDoc.write('<!doctype html><html><head><style>'+document.querySelector('style').textContent+'</style></head><body>'+document.getElementById('dossier').outerHTML+document.querySelector('.trial-progress').outerHTML+'</body></html>');phoneDoc.close();
-    check(phone.contentWindow.innerWidth===320,'phone fixture has a true 320px viewport');
-    check(phoneDoc.documentElement.scrollWidth<=320,'dossier and progress fit a 320px phone');
-    for(const step of phoneDoc.querySelectorAll('.trial-progress li')){const box=step.getBoundingClientRect(),label=step.lastElementChild.getBoundingClientRect();check(label.left>=box.left&&label.right<=box.right,'phase label stays inside its step at 320px')}
-    phone.remove();
+    check(document.getElementById('dossier').contains(document.querySelector('.trial-progress'))&&document.querySelectorAll('.trial-progress').length===1,'one compact stepper belongs to the dossier');
+    const emblem=document.querySelector('.site-emblem');await new Promise(done=>{if(emblem.complete)done();else{emblem.onload=done;emblem.onerror=done}});check(emblem.naturalWidth>0&&emblem.getBoundingClientRect().width<=48,'original shared emblem loads at navigation size');
+    for(const width of [320,375,768,1024,1280]){
+      const phone=document.createElement('iframe');phone.style.cssText='position:fixed;left:-10000px;width:'+width+'px;height:1200px;border:0';document.body.append(phone);
+      const phoneDoc=phone.contentDocument;phoneDoc.open();phoneDoc.write('<!doctype html><html><head><style>'+document.querySelector('style').textContent+'</style></head><body>'+document.querySelector('.site-header').outerHTML+document.getElementById('dossier').outerHTML+'</body></html>');phoneDoc.close();
+      check(phone.contentWindow.innerWidth===width,'true '+width+'px viewport');
+      const title=phoneDoc.getElementById('defendant-name'),portrait=phoneDoc.getElementById('mugshot'),progress=phoneDoc.querySelector('.trial-progress'),dossier=phoneDoc.getElementById('dossier');
+      for(const long of [false,true]){
+        title.textContent=long?'Prometheus and the Assembly of Mythological Witnesses — '+ 'Averylongunbrokenmythologicalname'.repeat(5):'Medusa';
+        check(phoneDoc.documentElement.scrollWidth<=width,'header fits '+width+'px with '+(long?'long':'short')+' title');
+        const db=dossier.getBoundingClientRect(),pb=progress.getBoundingClientRect(),tb=title.getBoundingClientRect(),mb=portrait.getBoundingClientRect();
+        check(pb.left>=db.left&&pb.right<=db.right&&pb.top>=db.top&&pb.bottom<=db.bottom,'stepper remains inside dossier '+width);
+        check(width>1100?pb.left>=tb.right:pb.top>=tb.bottom,'stepper uses right desktop / secondary responsive placement '+width);
+        for(const step of phoneDoc.querySelectorAll('.trial-progress li')){const box=step.getBoundingClientRect(),label=step.lastElementChild.getBoundingClientRect();check(label.left>=box.left-.1&&label.right<=box.right+.1,'phase label stays inside compact step at '+width)}
+        check(mb.right<=tb.left&&mb.bottom<=db.bottom,'portrait stays separate from long title '+width);
+      }
+      portrait.textContent='Ω';check(portrait.getBoundingClientRect().width===(width<=600?96:width<=1100?116:136),'missing portrait retains responsive frame '+width);
+      const frameStyle=phone.contentWindow.getComputedStyle(portrait,'::after');check(frameStyle.pointerEvents==='none'&&frameStyle.backgroundImage.includes('data:image/svg+xml'),'local ornamental frame stays decorative '+width);
+      const titleColor=phone.contentWindow.getComputedStyle(title).color,chargeColor=phone.contentWindow.getComputedStyle(phoneDoc.getElementById('defendant-charge')).color;
+      // Bound text against a deliberately brighter surface than the dark architecture overlay.
+      const limit=luminance('rgb(70, 65, 55)');for(const color of [titleColor,chargeColor])check((luminance(color)+.05)/(limit+.05)>=4.5,'dossier text contrast against conservative background bound '+width);
+      const before=phone.contentWindow.getComputedStyle(dossier,'::before');check(before.backgroundImage.includes('linear-gradient')&&before.backgroundImage.includes('data:image/svg+xml'),'local architecture uses a dark gradient overlay '+width);
+      phone.remove();
+    }
     frames=[document.getElementById('mugshot')];
    }else{
     document.getElementById('archive-detail').hidden=false;
@@ -106,10 +125,10 @@ try{
     renderPortrait(frame,'https://synthetic.invalid/medusa.svg','Synthetic Medusa portrait');
     const img=frame.firstElementChild;await new Promise(done=>setTimeout(done,100));check(img.complete&&img.naturalWidth===4096,'oversized synthetic image loaded');
     const box=frame.getBoundingClientRect(),picture=img.getBoundingClientRect(),style=getComputedStyle(img);
-    const expected=page==='court'?(innerWidth<=600?84:108):(frame.classList.contains('archive-thumbnail')?48:76);
+    const expected=page==='court'?(innerWidth<=600?96:innerWidth<=1100?116:136):(frame.classList.contains('archive-thumbnail')?48:76);
     check(Math.abs(box.width-expected)<0.1&&Math.abs(box.height-expected)<0.1,'fixed frame '+expected+'px');
     check(picture.left>=box.left-0.1&&picture.top>=box.top-0.1&&picture.right<=box.right+0.1&&picture.bottom<=box.bottom+0.1,'image stays inside frame');
-    check(style.position==='absolute'&&style.objectFit==='cover'&&style.objectPosition==='50% 50%','centered cover resists generic image positioning');
+    check(style.position==='absolute'&&style.objectFit===(page==='court'?'contain':'cover')&&style.objectPosition==='50% 50%','centered cover resists generic image positioning');
     check(box.width===before.width&&box.height===before.height,'no load size shift');
     const header=document.querySelector('.site-header').getBoundingClientRect();check(box.top>=header.bottom,'frame remains below navigation');
     img.onerror();check(frame.textContent==='Ω'&&!frame.querySelector('img'),'image failure restores Ω');
@@ -121,7 +140,7 @@ try{
   `;
   new Function(script); // Catch fixture syntax errors before launching Chrome.
   // Real page markup/styles, but remove application scripts so no Firebase service is touched.
-  let html=fs.readFileSync(path.join(root,page+'.html'),'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
+  let html=fs.readFileSync(path.join(root,page+'.html'),'utf8').replace(/src="olympos-emblem.svg"/g,()=>"src=\""+dataAsset('olympos-emblem.svg')+"\"").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
   const csp=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">`;
   html=html.replace('<head>','<head>'+csp).replace(/<link[^>]*href="style\.css[^\"]*"[^>]*>/,()=>'<style>'+css+'</style>');
   // A low-specificity conflicting rule must not float the portrait over the page.
