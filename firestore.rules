@@ -5,18 +5,40 @@ service cloud.firestore {
   // Never use a student UID. Keep the quotes.
   function admin() { return request.auth != null && request.auth.uid == 'REPLACE_WITH_ADMIN_UID'; }
   function own(uid) { return request.auth != null && request.auth.uid == uid; }
+  function validPrivateSchool(allowOld) {
+   let id = request.resource.data.get('schoolId','');
+   let visible = request.resource.data.get('publicSchool',false);
+   let token = request.resource.data.get('schoolConsentVersion','');
+   return id is string && id.size() <= 80 && visible is bool && token is string
+    && (token == '' || token.matches('^[A-Za-z0-9]{20}$'))
+    && (id == '' ? visible == false :
+      (id.matches('^[A-Za-z0-9_-]{1,80}$') && exists(/databases/$(database)/documents/schools/$(id)) &&
+       (get(/databases/$(database)/documents/schools/$(id)).data.active == true ||
+        (allowOld && id == resource.data.get('schoolId','') && visible == false))));
+  }
+  match /schools/{schoolId} {
+   allow read: if admin();
+   allow create, update: if admin() && schoolId.matches('^[A-Za-z0-9_-]{1,80}$')
+     && request.resource.data.keys().hasOnly(['name','countryCode','active'])
+     && request.resource.data.name is string && request.resource.data.name.trim().size() > 0 && request.resource.data.name.size() <= 160
+     && request.resource.data.countryCode in ['TR','RO','GR'] && request.resource.data.active is bool;
+   allow delete: if false;
+  }
   match /students/{uid} {
    allow get: if own(uid) || admin();
    allow list: if admin();
    // The designated administrator may provision students and pause participation.
    // Existing extra profile fields are preserved; teacher profiles cannot be edited here.
    allow create: if admin() && uid != request.auth.uid
-     && request.resource.data.keys().hasOnly(['displayName','accountType','active'])
+     && request.resource.data.keys().hasOnly(['displayName','accountType','active','schoolId','publicSchool','schoolConsentVersion'])
+     && validPrivateSchool(false) && request.resource.data.get('publicSchool',false) == false
      && request.resource.data.displayName is string && request.resource.data.displayName.trim().size() > 0
      && request.resource.data.displayName.size() <= 100
      && request.resource.data.accountType == 'student' && request.resource.data.active == true;
    allow update: if admin() && uid != request.auth.uid && resource.data.accountType == 'student'
-     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','active'])
+     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','active','schoolId','publicSchool','schoolConsentVersion'])
+     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['schoolId','publicSchool','schoolConsentVersion']) ||
+       (validPrivateSchool(true) && request.resource.data.get('schoolConsentVersion','').matches('^[A-Za-z0-9]{20}$')))
      && request.resource.data.displayName is string && request.resource.data.displayName.trim().size() > 0
      && request.resource.data.displayName.size() <= 100 && request.resource.data.active is bool;
    allow delete: if false;
@@ -87,6 +109,24 @@ service cloud.firestore {
       && (!exists(/databases/$(database)/documents/trials/$(trialId)/reasoningReviews/$(uid))
         || request.resource.data.publicId == resource.data.publicId);
     allow delete: if false;
+   }
+   // Public paths use submission IDs, never student UIDs. No attribution is added to jury data.
+   match /attributions/{submissionId} {
+    function validAttribution(data, requirePermission) {
+     let post = get(/databases/$(database)/documents/trials/$(trialId)/submissions/$(submissionId)).data;
+     let profile = get(/databases/$(database)/documents/students/$(post.authorUid)).data;
+     let school = get(/databases/$(database)/documents/schools/$(profile.schoolId)).data;
+     return post.status == 'published' && post.section in ['prosecution','defense'] && profile.accountType == 'student'
+      && (!requirePermission || profile.get('publicSchool',false) == true) && school.active == true
+      && data.keys().hasOnly(['schoolName','countryCode']) && data.keys().hasAll(['schoolName','countryCode'])
+      && data.schoolName is string && data.schoolName.size() <= 160 && data.schoolName == school.name
+      && data.countryCode in ['TR','RO','GR'] && data.countryCode == school.countryCode;
+    }
+    // Public-view readers, including a signed-in teacher, never bypass visibility permission.
+    allow get: if validAttribution(resource.data,true);
+    allow list: if false;
+    allow create, update: if admin() && validAttribution(request.resource.data,false);
+    allow delete: if admin();
    }
    match /votes/{uid} {
     function eligible() { return request.auth != null && request.auth.uid == uid

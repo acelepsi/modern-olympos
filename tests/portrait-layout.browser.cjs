@@ -13,6 +13,9 @@ const caseHelper=fs.readFileSync(path.join(root,'case-content.js'),'utf8').repla
 const courtHelper=fs.readFileSync(path.join(root,'court-ui.js'),'utf8').replace(/^export /gm,'');
 const appSource=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const submissionRenderer=appSource.slice(appSource.indexOf('function renderMine(){'),appSource.indexOf('function refreshSubmissionListeners(){'));
+const schoolHelper=fs.readFileSync(path.join(root,'school-data.js'),'utf8').replace(/^export /gm,'');
+const attributionHelper=fs.readFileSync(path.join(root,'school-attribution.js'),'utf8').replace(/^import .*\n/gm,'').replace(/^export /gm,'');
+const attributionFixture="const argumentSchools=createSchoolAttribution({db:{},doc:(...args)=>args,onSnapshot:(ref,options,next)=>{next({exists:()=>false,metadata:{fromCache:false,hasPendingWrites:false}});return()=>{}}});";
 const archiveSource=fs.readFileSync(path.join(root,'archive.js'),'utf8');
 const archiveRenderers="const $=id=>document.getElementById(id);\n"+archiveSource.slice(archiveSource.indexOf('function node('),archiveSource.indexOf('async function loadArchive('));
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'olympos-portrait-layout-'));
@@ -146,7 +149,7 @@ try{
   html=html.replace('<head>','<head>'+csp).replace(/<link[^>]*href="style\.css[^\"]*"[^>]*>/,()=>'<style>'+css+'</style>');
   // A low-specificity conflicting rule must not float the portrait over the page.
   html=html.replace('</head>','<style>img{position:fixed;top:0;left:0;width:4096px;height:6144px;max-width:none;object-fit:fill}</style></head>');
-  html=html.replace('</body>',()=>'<script>'+helper+'\n'+caseHelper+'\n'+(page==='court'?courtHelper:'')+'\n'+(page==='archive'?reasoningHelper+'\n'+archiveRenderers:'')+'\n'+script+'</script></body>');
+  html=html.replace('</body>',()=>'<script>'+helper+'\n'+schoolHelper+'\n'+attributionHelper+'\n'+attributionFixture+'\n'+caseHelper+'\n'+(page==='court'?courtHelper:'')+'\n'+(page==='archive'?reasoningHelper+'\n'+archiveRenderers:'')+'\n'+script+'</script></body>');
   const file=path.join(temporary,`${page}-${narrow}.html`);fs.writeFileSync(file,html);
   const args=['--headless','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--disable-sync','--no-first-run',`--user-data-dir=${path.join(temporary,page+'-'+narrow+'-profile')}`,'--dump-dom','--virtual-time-budget=3000',`--window-size=${narrow?'390,1000':'1280,1000'}`,pathToFileURL(file).href];
   const cache=path.join(temporary,'cache');fs.mkdirSync(cache,{recursive:true});

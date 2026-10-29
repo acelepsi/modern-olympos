@@ -11,7 +11,7 @@ function text(tag,value,className){const node=document.createElement(tag);node.t
 function trialNode(entry){const info=related.get(entry.relatedTrialId);if(!info)return null;const node=text(info.href?'a':'p',info.label,'encyclopedia-related');if(info.href)node.href=info.href;return node}
 export function renderEncyclopedia(){
  const list=$('encyclopedia-list'),detail=$('encyclopedia-detail');list.replaceChildren();detail.replaceChildren();
- const selected=new URLSearchParams(location.search).get('character');$('encyclopedia-browser').hidden=!!selected;$('encyclopedia-back').hidden=!selected;detail.hidden=!selected;
+ const selected=new URLSearchParams(location.search).get('character');$('encyclopedia-search-mount').hidden=!!selected;$('encyclopedia-browser').hidden=!!selected;$('encyclopedia-back').hidden=!selected;detail.hidden=!selected;
  if(selected){
   const entry=entries.find(item=>item.id===selected);if(!entry){detail.append(text('p','That published character entry is unavailable. Return to the encyclopedia to choose another.'));return}
   const head=document.createElement('header');head.className='encyclopedia-detail-header';const portrait=document.createElement('div');portrait.className='trial-portrait encyclopedia-portrait';renderPortrait(portrait,entry.portraitUrl,`Portrait of ${entry.name}`);
