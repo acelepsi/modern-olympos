@@ -1,7 +1,8 @@
+import {setupEncyclopediaAdmin} from './encyclopedia-admin.js';
 import {caseCharge} from './case-content.js';
 import {initializeApp,deleteApp} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js';
 import {getAuth,createUserWithEmailAndPassword,deleteUser,initializeAuth,inMemoryPersistence,connectAuthEmulator,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js';
-import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+import {getFirestore,connectFirestoreEmulator,collection,doc,getDoc,getDocs,setDoc,updateDoc,onSnapshot,getDocFromServer,getDocsFromServer,runTransaction,Timestamp,deleteDoc} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
 import {initializeFirebaseClient} from './firebase-client.js';
 import {provisionStudent} from './student-accounts.js';
 import {portraitUrl} from './portraits.js';
@@ -358,3 +359,5 @@ async function loadReasoningReview(){
  finally{if(current()){button.disabled=false;feedback.setAttribute('aria-busy','false')}}
 }
 $('load-reasoning').addEventListener('click',loadReasoningReview);
+
+setupEncyclopediaAdmin({auth,db,onAuthStateChanged,collection,doc,getDocFromServer,getDocsFromServer,setDoc,deleteDoc});

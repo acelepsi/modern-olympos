@@ -623,3 +623,35 @@ test('legacy HTTP draft can be revised/resubmitted unchanged, upgraded or cleare
  const visible=await assertSucceeds(getDoc(ref(null,path)));assert.equal(visible.data().evidenceUrl,'http://example.org/original');
  await assertFails(updateDoc(ref('prosecutor',path),{text:'Tampered published text'}));
 });
+
+// Encyclopedia is an isolated collection; existing trial/ballot rules remain unchanged.
+const encyclopediaEntry=(extra={})=>({name:'Synthetic Figure',tradition:'Synthetic Tradition',introduction:'A teacher-written synthetic introduction.',biography:'Teacher-written biography.',actions:'Teacher-written actions.',perspectives:'Teacher-written differing perspectives.',portraitUrl:'',sources:'Teacher-supplied synthetic reference.',relatedTrialId:'',status:'draft',...extra});
+for(const uid of [null,'prosecutor','defender','juror','observer','other-teacher'])test(`${uid||'public'} reads published encyclopedia only and cannot edit`,async()=>{
+ await seed({'encyclopedia/public-figure':encyclopediaEntry({status:'published'}),'encyclopedia/private-figure':encyclopediaEntry()});
+ await assertSucceeds(getDoc(ref(uid,'encyclopedia/public-figure')));await assertFails(getDoc(ref(uid,'encyclopedia/private-figure')));
+ await assertSucceeds(getDocs(query(collection(db(uid),'encyclopedia'),where('status','==','published'))));await assertFails(getDocs(collection(db(uid),'encyclopedia')));
+ await assertFails(setDoc(ref(uid,'encyclopedia/attack'),encyclopediaEntry({status:'published'})));await assertFails(updateDoc(ref(uid,'encyclopedia/public-figure'),{name:'Tampered'}));await assertFails(deleteDoc(ref(uid,'encyclopedia/public-figure')));
+});
+test('designated administrator creates, publishes, unpublishes and deletes entries without changing trials',async()=>{
+ const entry=ref(ADMIN,'encyclopedia/synthetic-figure'),trialBefore=(await getDoc(ref(ADMIN,'trials/case-c'))).data();
+ await assertSucceeds(setDoc(entry,encyclopediaEntry({relatedTrialId:'case-c'})));await assertSucceeds(getDocs(collection(db(ADMIN),'encyclopedia')));
+ await assertSucceeds(updateDoc(entry,{status:'published',portraitUrl:'https://images.example/synthetic.jpg'}));await assertSucceeds(getDoc(ref(null,'encyclopedia/synthetic-figure')));
+ await assertSucceeds(updateDoc(entry,{status:'draft'}));await assertFails(getDoc(ref(null,'encyclopedia/synthetic-figure')));await assertSucceeds(deleteDoc(entry));assert.deepEqual((await getDoc(ref(ADMIN,'trials/case-c'))).data(),trialBefore);
+});
+for(const [field,limit] of Object.entries({name:100,tradition:80,introduction:500,biography:8000,actions:8000,perspectives:8000,sources:4000,portraitUrl:2000,relatedTrialId:80})){
+ test('encyclopedia rejects invalid type/oversize '+field,async()=>{for(const value of [42,null,'x'.repeat(limit+1)])await assertFails(setDoc(ref(ADMIN,'encyclopedia/invalid'),encyclopediaEntry({[field]:value})));});
+}
+for(const extra of [{name:' '},{tradition:''},{introduction:'\t '},{status:'public'},{studentUid:'private-uid'},{createdBy:'private-uid'},{portraitUrl:'http://images.example/a.jpg'},{portraitUrl:'https://user:password@images.example/a.jpg'},{portraitUrl:'https://'},{relatedTrialId:'../students/juror'},{relatedTrialId:'missing-trial'}])test('encyclopedia rejects malformed or unexpected data '+JSON.stringify(extra),async()=>{
+ await assertFails(setDoc(ref(ADMIN,'encyclopedia/invalid'),encyclopediaEntry(extra)));
+});
+for(const field of ['name','tradition','introduction','biography','actions','perspectives','portraitUrl','sources','relatedTrialId','status'])test('encyclopedia requires field '+field,async()=>{
+ const data=encyclopediaEntry();delete data[field];await assertFails(setDoc(ref(ADMIN,'encyclopedia/invalid'),data));
+});
+for(const field of ['biography','actions','perspectives','sources'])test('unfinished encyclopedia '+field+' can be drafted but not published',async()=>{
+ await assertSucceeds(setDoc(ref(ADMIN,'encyclopedia/unfinished'),encyclopediaEntry({[field]:''})));await assertFails(updateDoc(ref(ADMIN,'encyclopedia/unfinished'),{status:'published'}));
+});
+test('encyclopedia limits and new traditions remain compatible with public published queries',async()=>{
+ await assertSucceeds(setDoc(ref(ADMIN,'encyclopedia/limits'),encyclopediaEntry({name:'x'.repeat(100),tradition:'An additional teacher-defined tradition',introduction:'x'.repeat(500),biography:'x'.repeat(8000),actions:'x'.repeat(8000),perspectives:'x'.repeat(8000),sources:'x'.repeat(4000),status:'published'})));
+ const result=await assertSucceeds(getDocs(query(collection(db(null),'encyclopedia'),where('status','==','published'))));assert.equal(result.size,1);
+ await assertFails(getDoc(ref(null,'students/juror')));await assertFails(getDoc(ref(null,'trials/case-b/votes/other-juror')));await assertFails(getDocs(collection(db(null),'trials/case-c/reasoningReviews')));
+});

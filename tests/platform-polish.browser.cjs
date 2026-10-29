@@ -11,7 +11,12 @@ function fixture(page){
  html=html.replace('<head>','<head><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data:">');
  html=html.replace(/<link[^>]*href="([^"?]+)(?:\?[^\"]*)?"[^>]*>/g,(_,name)=>'<style'+(name==='archive-print.css'?' media="print"':'')+'>'+(name==='style.css'?css:read(name))+'</style>');
  let script='';
+ const strip=file=>read(file).replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\n/gm,'').replace(/^export /gm,'');
+ const synthetic={name:'Synthetic Figure A',tradition:'Greek',introduction:'A teacher-supplied synthetic introduction.',biography:'A teacher-supplied synthetic biography.',actions:'Synthetic actions.',perspectives:'Synthetic different perspectives.',sources:'A teacher-supplied synthetic citation.',portraitUrl:'',relatedTrialId:'synthetic-closed',status:'published'};
+
  if(page==='admin')script=read('admin-workspace.js').replace(/^export /gm,'')+`;document.getElementById('dashboard').hidden=false;document.getElementById('login-panel').hidden=true;document.getElementById('account-rows').innerHTML='<tr><td>Synthetic Public Alias</td><td>Active</td><td><button>Pause</button></td></tr>';document.getElementById('student-rows').innerHTML='<tr><td>Synthetic Alias</td><td><select><option>Prosecutor</option></select></td><td><button>Save role</button></td></tr>';`;
+ if(page==='admin')script+='\n'+strip('portraits.js')+'\n'+strip('encyclopedia-data.js')+'\n'+strip('encyclopedia-admin.js')+`;window.entryWrites=[];setupEncyclopediaAdmin({auth:{currentUser:{uid:'synthetic-admin'}},db:{},onAuthStateChanged:(_,callback)=>callback({uid:'synthetic-admin'}),doc:(...args)=>args.length===1?{id:'randomSyntheticEntry'}:args.slice(1),collection:(_, ...args)=>args,getDocFromServer:async()=>({exists:()=>true,data:()=>({active:true,accountType:'teacher',status:'closed'})}),getDocsFromServer:async()=>({docs:[{id:'synthetic-a',data:()=>(${JSON.stringify(synthetic)})}]}),setDoc:async(ref,data)=>window.entryWrites.push({ref,data}),deleteDoc:async()=>{}});`;
+ if(page==='who-is-who')script=strip('portraits.js')+'\n'+strip('encyclopedia-data.js')+`\nconst noop=()=>{};const initializeApp=noop,getAuth=noop,initializeAuth=noop,inMemoryPersistence={},connectAuthEmulator=noop,getFirestore=noop,connectFirestoreEmulator=noop;const initializeFirebaseClient=()=>({db:{}});const collection=(_, ...args)=>args,doc=(_, ...args)=>args,query=(...args)=>args,where=(...args)=>args;window.entryReads=0;const getDocsFromServer=async()=>{window.entryReads++;return {docs:[{id:'synthetic-a',data:()=>(${JSON.stringify(synthetic)})},{id:'synthetic-b',data:()=>({...${JSON.stringify(synthetic)},name:'Synthetic Figure B',tradition:'A new teacher tradition',relatedTrialId:''})}]}};const getDocFromServer=async ref=>({exists:()=>true,data:()=>ref[0]==='settings'?{trialId:'other-trial'}:{title:'Synthetic closed trial',status:'closed'}});\n`+strip('encyclopedia.js');
  if(page==='archive'){
   const source=read('archive.js'),renderers=source.slice(source.indexOf('function node('),source.indexOf('async function loadArchive('));
   script=read('jury-reasoning.js').replace(/^export /gm,'')+"\nconst $=id=>document.getElementById(id);\n"+renderers+`;document.getElementById('archive-page').setAttribute('aria-busy','false');document.getElementById('archive-detail').hidden=false;document.getElementById('archive-browser').hidden=true;document.getElementById('archive-title').textContent='Prometheus — a synthetic educational case file';document.getElementById('archive-info').textContent='A public synthetic charge.';renderTally({guilty:2,notGuilty:1});renderArgument(document.getElementById('archive-prosecution'),{authorName:'Public Prosecution Alias',text:'A published argument.\\n\\nA second paragraph.'});renderArgument(document.getElementById('archive-defense'),{authorName:'Public Defense Alias',text:'A published defense.'});renderReasoningCards([{id:'ABCDEFGHIJKLMNOPQRST',data:()=>({choice:'guilty',reason:'Approved anonymous reasoning for the public case file.'})}]);`;
@@ -28,7 +33,7 @@ async function navigate(url){await send('Page.navigate',{url});for(let i=0;i<80;
 (async()=>{
  try{
   const target=await send('Target.createTarget',{url:'about:blank'},null);session=(await send('Target.attachToTarget',{targetId:target.targetId,flatten:true},null)).sessionId;await send('Page.enable');
-  for(const page of ['index','admin','archive']){
+  for(const page of ['index','admin','archive','who-is-who','how-it-works']){
    await navigate(fixture(page));
    for(const width of [320,375,768,1024,1280]){
     await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:false});
@@ -36,6 +41,11 @@ async function navigate(url){await send('Page.navigate',{url});for(let i=0;i<80;
     if(page==='index'){
      check(await evaluate("getComputedStyle(document.querySelector('.hero-slide')).backgroundImage.includes('data:image/svg+xml')"),'local landing artwork '+width);
      check(await evaluate("document.querySelector('.hero-title').getBoundingClientRect().right<=innerWidth"),'landing title '+width);
+    }
+    if(page==='who-is-who'){
+     check(await evaluate("document.querySelectorAll('.encyclopedia-card').length===2&&document.querySelectorAll('#tradition-filter option').length===3"),'public cards and expandable traditions '+width);
+     check(await evaluate("[...document.querySelectorAll('.encyclopedia-card')].every(card=>card.getBoundingClientRect().right<=innerWidth)"),'encyclopedia cards fit '+width);
+     check(await evaluate("document.querySelector('.encyclopedia-related').getAttribute('href')==='archive.html?trial=synthetic-closed'"),'completed related case link '+width);
     }
     if(page==='admin'){
      check(await evaluate("['trial-form','student-account-form','refresh-roles','refresh-submissions','refresh-votes','publish-verdict','load-reasoning'].every(id=>document.getElementById(id).getClientRects().length>0)"),'all administrator tools visible '+width);
@@ -49,6 +59,15 @@ async function navigate(url){await send('Page.navigate',{url});for(let i=0;i<80;
    if(page==='admin'){
     await evaluate("document.querySelector('[data-workspace-link]').focus()");await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
     check(await evaluate("document.activeElement.hash==='#manage-students'&&getComputedStyle(document.activeElement).outlineStyle!=='none'"),'administrator native keyboard navigation and visible focus');
+   }
+   if(page==='who-is-who'){
+    const reads=await evaluate('window.entryReads');await evaluate("document.getElementById('character-search').value='missing';document.getElementById('character-search').dispatchEvent(new Event('input'))");check(await evaluate("document.querySelectorAll('.encyclopedia-card').length===0&&document.getElementById('encyclopedia-results').textContent.includes('No published')"),'search empty state');check(await evaluate('window.entryReads')===reads,'search has no extra reads');
+    await evaluate("history.replaceState(null,'','?character=synthetic-a');renderEncyclopedia()");check(await evaluate("document.getElementById('encyclopedia-detail').textContent.includes('Different interpretations')&&document.getElementById('encyclopedia-detail').textContent.includes('Sources and further reading')"),'dedicated detail includes teacher content and perspectives');
+    for(const width of [320,375,768,1024,1280]){await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:false});check(await evaluate('document.documentElement.scrollWidth<=innerWidth'),'character detail fits '+width)}
+   }
+   if(page==='admin'){
+    await evaluate("document.getElementById('entry-select').value='synthetic-a';document.getElementById('entry-select').dispatchEvent(new Event('change'))");check(await evaluate("document.getElementById('entry-name').value==='Synthetic Figure A'&&!document.getElementById('entry-editor').disabled"),'authorized encyclopedia editor restores selected content');
+    await evaluate("document.getElementById('entry-status').value='draft';document.getElementById('entry-form').dispatchEvent(new Event('submit',{cancelable:true}))");await new Promise(resolve=>setTimeout(resolve,30));check(await evaluate("window.entryWrites.length===1&&window.entryWrites[0].ref[0]==='encyclopedia'&&window.entryWrites[0].data.status==='draft'"),'teacher editor unpublishes through synthetic existing client only');
    }
    await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
    check(await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"),'reduced-motion media '+page);

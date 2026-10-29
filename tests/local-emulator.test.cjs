@@ -96,3 +96,13 @@ test('real trial charge and chronological published feed preserve historical evi
  const ordered=chronologicalSubmissions(snapshot.docs);for(let i=1;i<ordered.length;i++)assert.ok(ordered[i-1].createdAt.toMillis()<=ordered[i].createdAt.toMillis());
  const saved=(await storeSdk.getDoc(ref('prosecutor',privateKey))).data();assert.equal(saved.createdAt.toMillis(),original.createdAt.toMillis());assert.equal(saved.evidenceUrl,evidenceUrl);
 });
+
+test('real shared administrator client manages encyclopedia while public and students remain read-only',async()=>{
+ const {validateEntry}=await import(require('node:url').pathToFileURL(path.join(__dirname,'..','encyclopedia-data.js')).href);
+ const entry=validateEntry({name:'Synthetic Character',tradition:'A synthetic tradition',introduction:'A teacher-written introduction.',biography:'Synthetic biography.',actions:'Synthetic actions.',perspectives:'Synthetic alternative perspectives.',sources:'Teacher-written synthetic citation.',portraitUrl:'',relatedTrialId:'local-closed',status:'draft'});
+ const key='encyclopedia/integration-character';await storeSdk.setDoc(ref('admin',key),entry);await assert.rejects(storeSdk.getDoc(ref('observer',key)),error=>error.code==='permission-denied');
+ await storeSdk.updateDoc(ref('admin',key),{status:'published'});assert.equal((await storeSdk.getDoc(ref('observer',key))).data().name,'Synthetic Character');
+ const published=await storeSdk.getDocs(storeSdk.query(storeSdk.collection(clients.get('observer').db,'encyclopedia'),storeSdk.where('status','==','published')));assert.equal(published.size,1);
+ await assert.rejects(storeSdk.updateDoc(ref('observer',key),{name:'Tampered'}),error=>error.code==='permission-denied');await assert.rejects(storeSdk.deleteDoc(ref('observer',key)),error=>error.code==='permission-denied');
+ await storeSdk.updateDoc(ref('admin',key),{status:'draft'});await assert.rejects(storeSdk.getDoc(ref('observer',key)),error=>error.code==='permission-denied');await storeSdk.deleteDoc(ref('admin',key));
+});
