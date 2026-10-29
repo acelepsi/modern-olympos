@@ -51,7 +51,7 @@ const server=http.createServer((req,res)=>{
  if(!allowed.has(name)){res.writeHead(404);return res.end()}
  let body=name==='mock-sdk.js'?sdk:read(name);
  // Keep the fixture offline without expected font-policy console errors.
- if(name.endsWith('.css'))body=body.replace(/@import\s+url\([^;]+;/g,'');
+ if(name.endsWith('.css'))body=body.replace(/@import\s+url\([^)]*\);/g,'');
  if(name==='admin.html'||name==='index.html'){
   const imports=Object.fromEntries(['app','auth','firestore'].map(part=>['https://www.gstatic.com/firebasejs/13.1.0/firebase-'+part+'.js','/mock-sdk.js']));
   imports['/firebase-client.js']='/mock-sdk.js';
@@ -107,8 +107,9 @@ async function waitFor(expression,label){for(let i=0;i<100;i++){if(errors.length
   check(errors.length===0,'no unexpected JavaScript console errors throughout school management');
   await navigate(`http://127.0.0.1:${server.address().port}/index.html`);
   await waitFor("document.getElementById('international-schools').textContent==='0'&&document.getElementById('international-trials').textContent==='1'",'empty approved directory and actual trial count');
+  check(await evaluate("getComputedStyle(document.querySelector('.hero-title')).color==='rgb(243, 237, 224)'&&getComputedStyle(document.querySelector('.hero-slide')).backgroundImage.includes('mythological-entrance.svg')"),'existing hero artwork and text contrast preserved');
   check(await evaluate("document.querySelectorAll('.international-country').length===0&&document.getElementById('international-directory-status').textContent.includes('after administrator approval')"),'empty directory remains compact and truthful');
-  await evaluate("window.syntheticSet('publicSchools/tr-a',{name:'Synthetic Türkiye School A',countryCode:'TR'});window.syntheticSet('publicSchools/tr-b',{name:'Synthetic Türkiye School B',countryCode:'TR'});window.syntheticSet('publicSchools/ro',{name:'Synthetic Romania School',countryCode:'RO'});window.syntheticSet('publicSchools/gr',{name:'Synthetic Greece School',countryCode:'GR'});window.syntheticSet('trials/voting',{title:'Voting case',status:'verdict'});window.syntheticSet('trials/closed',{title:'Closed case',status:'closed'});document.getElementById('international-refresh').click()");
+  await evaluate("window.syntheticSet('publicSchools/tr-a',{name:'Synthetic Türkiye School A',countryCode:'TR'});window.syntheticSet('publicSchools/tr-b',{name:'Synthetic Türkiye School B '+ 'x'.repeat(120),countryCode:'TR'});window.syntheticSet('publicSchools/ro',{name:'Synthetic Romania School',countryCode:'RO'});window.syntheticSet('publicSchools/gr',{name:'Synthetic Greece School',countryCode:'GR'});window.syntheticSet('trials/voting',{title:'Voting case',status:'verdict'});window.syntheticSet('trials/closed',{title:'Closed case',status:'closed'});document.getElementById('international-refresh').click()");
   await waitFor("document.getElementById('international-schools').textContent==='4'&&document.getElementById('international-trials').textContent==='3'",'counts derive from public records');
   check(await evaluate("document.getElementById('international-countries').textContent==='3'&&document.querySelectorAll('.international-country').length===3&&document.querySelectorAll('.international-country li').length===4"),'all approved schools grouped under their actual countries');
   check(await evaluate("window.syntheticReads.every(key=>['publicSchools','trials'].includes(key))&&!document.querySelector('.international-court').textContent.includes('Synthetic Alias')"),'homepage never reads private profiles/directory or student metadata');
