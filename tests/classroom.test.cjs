@@ -26,7 +26,7 @@ test('unconfirmed partial creation gives a recovery message without reporting su
 function element(){return {textContent:'',children:[],hidden:false,disabled:false,attributes:{},handlers:{},append(...items){this.children.push(...items)},replaceChildren(...items){this.children=items;this.textContent=''},setAttribute(k,v){this.attributes[k]=v},getAttribute(k){return this.attributes[k]},addEventListener(k,v){this.handlers[k]=v}}}
 function archive(search='?trial=closed-case'){
  const nodes=new Map(),calls=[];const get=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)};
- const context={document:{getElementById:get,createElement:element},initializeFirebaseClient:()=>({db:{}}),initializeApp(){},getAuth(){},initializeAuth(){},inMemoryPersistence:{},connectAuthEmulator(){},getFirestore(){},connectFirestoreEmulator(){},URL,URLSearchParams,location:{search},
+ const context={document:{getElementById:get,createElement:element},createSchoolAttribution:()=>({clear(){},render(){}}),doc(){},onSnapshot(){},initializeFirebaseClient:()=>({db:{}}),initializeApp(){},getAuth(){},initializeAuth(){},inMemoryPersistence:{},connectAuthEmulator(){},getFirestore(){},connectFirestoreEmulator(){},URL,URLSearchParams,location:{search},
  collection:(_, ...args)=>args,where:(...args)=>args,query:(...args)=>args,
  getDocsFromServer:async query=>{calls.push(query);return query[0].length===1?{docs:[{id:'active-case',data:()=>({status:'trial',title:'Active'})},{id:'closed-case',data:()=>({status:'closed',title:'Loki',verdictSummary:{guilty:2,notGuilty:1}})}]}:{docs:[
  {data:()=>({status:'published',section:'prosecution',authorName:'Alias',text:'Approved prosecution'})},

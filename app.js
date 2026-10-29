@@ -1,3 +1,4 @@
+import {createSchoolAttribution} from './school-attribution.js';
 import {renderTrialProgress,updateCourtCounters,setupCourtCounters,setupCourtTabs,createVoteConfirmation} from './court-ui.js';
 import {chronologicalSubmissions,validEvidence} from './case-content.js';
 // =================================================================
@@ -458,6 +459,7 @@ el.juryVoteForm.addEventListener('submit', async (e) => {
 // v5: case-scoped, moderated submissions.
 let stopPublished = null, stopMine = null, publishedRevision = 0, mineRevision = 0;
 let publishedTrial = null, mineContext = null;
+const argumentSchools=createSchoolAttribution({db,doc,onSnapshot});
 const pendingSubmissionSaves=new Set();
 let mySubmissions = [];
 function renderPost(container, data) {
@@ -467,6 +469,7 @@ function renderPost(container, data) {
   const text=document.createElement('div');text.className='text';text.textContent=data.text||'';
   article.append(meta,text);
   if(data.evidenceUrl){try{const u=new URL(data.evidenceUrl);if(['https:','http:'].includes(u.protocol)){const a=document.createElement('a');a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Evidence link';article.append(a)}}catch{}}
+  argumentSchools.render(meta,activeTrialId,data.id);
   container.append(article);
 }
 function renderMine(){
@@ -499,13 +502,13 @@ function refreshSubmissionListeners(){
  // Public access depends only on the trial, not identity or role rendering.
  if(publishedTrial!==trial){
   publishedTrial=trial;const request=++publishedRevision;
-  if(stopPublished)stopPublished();stopPublished=null;
+  if(stopPublished)stopPublished();stopPublished=null;argumentSchools.clear();
   for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').replaceChildren();
   if(trial)stopPublished=onSnapshot(query(collection(db,'trials',trial,'submissions'),where('status','==','published')),snap=>{
    if(request!==publishedRevision||trial!==activeTrialId)return;
    const feeds={prosecution:document.getElementById('prosecution-feed'),defense:document.getElementById('defense-feed')};
-   for(const feed of Object.values(feeds))feed.replaceChildren();
-   for(const post of chronologicalSubmissions(snap.docs))if(feeds[post.section])renderPost(feeds[post.section],post);
+   argumentSchools.clear();for(const feed of Object.values(feeds))feed.replaceChildren();
+   for(const post of chronologicalSubmissions(snap.docs,true))if(feeds[post.section])renderPost(feeds[post.section],post);
    for(const feed of Object.values(feeds))if(!feed.children.length)feed.textContent='No approved submissions yet.';
   },err=>{if(request!==publishedRevision||trial!==activeTrialId)return;for(const side of ['prosecution','defense'])document.getElementById(side+'-feed').textContent='Unable to load published arguments. Reload to retry.';});
  }

@@ -1,3 +1,4 @@
+import {setupSchoolAdmin} from './school-admin.js';
 import {setupEncyclopediaAdmin} from './encyclopedia-admin.js';
 import {caseCharge} from './case-content.js';
 import {initializeApp,deleteApp} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js';
@@ -189,7 +190,9 @@ async function loadReviewQueue(){
      const message=next==='returned'?feedback.value.trim():'';
      if(next==='returned'&&!message)return status('Enter feedback before returning.');
      buttons.forEach(b=>b.disabled=true);
-     try{await updateDoc(doc(db,'trials',context.trialId,'submissions',post.id),{status:next,feedback:message});if(currentPanel(context,'review',request)){status(`Submission ${next} for ${context.trialId}`);await loadReviewQueue()}}
+     try{await updateDoc(doc(db,'trials',context.trialId,'submissions',post.id),{status:next,feedback:message});let schoolWarning='';
+      if(next==='published'&&currentPanel(context,'review',request)){try{await schoolManager.publish(context.trialId,{...post,status:'published'})}catch{schoolWarning=' Optional school label could not be synced; the argument itself was approved.'}}
+      if(currentPanel(context,'review',request)){status(`Submission ${next} for ${context.trialId}`+schoolWarning);await loadReviewQueue()}}
      catch(err){if(currentPanel(context,'review',request)){status('Moderation failed: '+(err.code||err.message));buttons.forEach(b=>b.disabled=false)}}
     };wrap.append(btn);
    }
@@ -292,9 +295,10 @@ $('student-account-form').addEventListener('submit',async event=>{
  event.preventDefault();if(!adminAuthorized||creatingStudent)return;
  const revision=authRevision,uid=auth.currentUser?.uid,current=()=>adminAuthorized&&currentAdmin(revision,uid);
  const button=$('create-student');creatingStudent=true;button.disabled=true;
- const input={code:$('student-code').value,name:$('student-name').value,password:$('student-password').value};
+ const input={code:$('student-code').value,name:$('student-name').value,password:$('student-password').value,schoolId:$('student-school').value};
  $('student-password').value='';$('student-account-status').textContent='Creating student access…';
  try{
+  input.schoolId=schoolManager.creationSchool();
   const student=await provisionStudent(input,{
    current,
    open:()=>initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator},{name:'student-provision-'+(++provisionSequence),isolatedAuth:true}),
@@ -302,8 +306,8 @@ $('student-account-form').addEventListener('submit',async event=>{
    save:(id,profile)=>setDoc(doc(db,'students',id),profile),read:id=>getDocFromServer(doc(db,'students',id))
   });
   if(!current())return;
-  students.push(student);renderAccounts();await renderStudents();if(!current())return;
-  $('student-code').value='';$('student-name').value='';
+  students.push(student);renderAccounts();schoolManager.reload();await renderStudents();if(!current())return;
+  $('student-code').value='';$('student-name').value='';$('student-school').value='';
   $('student-account-status').textContent=`Student created. Code: ${student.code.toUpperCase()}. Give the code and chosen password privately to the student, then assign a trial role.`;
  }catch(error){if(current()){const messages={'auth/email-already-in-use':'That student code already exists. Use a different code; the existing account was not changed.','auth/weak-password':'Choose a stronger student password and try again.','auth/network-request-failed':'Check your connection and try again.','permission-denied':'Student access could not be saved. Ask the project owner to verify the prepared administrator rules.'};$('student-account-status').textContent='Unable to create student: '+(messages[error.code]||error.message||error.code)}}
  finally{creatingStudent=false;button.disabled=false}
@@ -361,3 +365,5 @@ async function loadReasoningReview(){
 $('load-reasoning').addEventListener('click',loadReasoningReview);
 
 setupEncyclopediaAdmin({auth,db,onAuthStateChanged,collection,doc,getDocFromServer,getDocsFromServer,setDoc,deleteDoc});
+
+const schoolManager=setupSchoolAdmin({auth,db,onAuthStateChanged,collection,doc,query,where,getDocFromServer,getDocsFromServer,setDoc,updateDoc,runTransaction});

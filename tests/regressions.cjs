@@ -46,6 +46,7 @@ function harness(file) {
     Timestamp: MockTimestamp,
     setDoc: async () => {}, updateDoc: async () => {}, addDoc: async () => {}, serverTimestamp: () => 'server-time',
     signOut: async () => {}, signInWithEmailAndPassword: async () => {},
+    setupSchoolAdmin:()=>({creationSchool:()=>'',reload(){},publish:async()=>{}}),createSchoolAttribution:()=>({clear(){},render(){}}),
     setupEncyclopediaAdmin(){},deleteDoc:async()=>{},
     setupCourtTabs:()=>({select(){}}),setupCourtCounters(){},updateCourtCounters(){},renderTrialProgress(){},
     createVoteConfirmation:()=>({ask:async()=>c.confirm(),cancel(){}}),

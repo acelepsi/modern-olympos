@@ -1,19 +1,22 @@
+import {createSchoolAttribution} from './school-attribution.js';
 import {chronologicalSubmissions} from './case-content.js';
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js';
 import {getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js';
-import {getFirestore,connectFirestoreEmulator,collection,query,where,getDocsFromServer} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+import {getFirestore,connectFirestoreEmulator,collection,query,where,getDocsFromServer,doc,onSnapshot} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
 import {initializeFirebaseClient} from './firebase-client.js';
 import {renderPortrait} from './portraits.js';
 import {reasoningReleased} from './jury-reasoning.js';
 const {db}=initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator});
 const $=id=>document.getElementById(id);
 let archiveRequest=0;
+const argumentSchools=createSchoolAttribution({db,doc,onSnapshot});
 function node(tag,text){const item=document.createElement(tag);if(text!==undefined)item.textContent=text;return item}
-function renderArgument(container,data){
+function renderArgument(container,data,trialId){
  const article=node('article');article.className='argument-card';
  const alias=node('h4',data.authorName||'Student');alias.className='archive-alias';
  const text=node('p',data.text||'');text.className='archive-argument-text';article.append(alias,text);
  if(data.evidenceUrl){try{const url=new URL(data.evidenceUrl);if(['http:','https:'].includes(url.protocol)){const link=node('a','Evidence source');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';article.append(link)}}catch{}}
+ argumentSchools.render(alias,trialId,data.id);
  container.append(article);
 }
 function renderTally(summary){
@@ -46,6 +49,7 @@ async function loadPublicReasoning(trial,current){
  }catch{if(current())list.textContent='Approved jury reasoning could not be loaded. Refresh the archive to retry.'}
 }
 async function loadArchive(){
+ argumentSchools.clear();
  const request=++archiveRequest,current=()=>request===archiveRequest;
  $('print-case-file').disabled=true;$('archive-page').setAttribute('aria-busy','true');
  $('archive-list').replaceChildren();$('archive-detail').hidden=true;$('archive-browser').hidden=false;$('archive-back').hidden=true;$('archive-status').textContent='Loading completed trials…';$('archive-status').setAttribute('aria-busy','true');$('archive-refresh').disabled=true;
@@ -63,7 +67,7 @@ async function loadArchive(){
   $('archive-status').textContent='Loading published arguments…';
   const submissions=await getDocsFromServer(query(collection(db,'trials',trial.id,'submissions'),where('status','==','published')));if(!current())return;
   const feeds={prosecution:$('archive-prosecution'),defense:$('archive-defense')};for(const feed of Object.values(feeds))feed.replaceChildren();
-  for(const post of chronologicalSubmissions(submissions.docs)){if(post.status==='published'&&feeds[post.section])renderArgument(feeds[post.section],post)}
+  for(const post of chronologicalSubmissions(submissions.docs,true)){if(post.status==='published'&&feeds[post.section])renderArgument(feeds[post.section],post,trial.id)}
   for(const feed of Object.values(feeds))if(!feed.children.length)feed.textContent='No published arguments for this side.';
   renderTally(trial.verdictSummary);$('archive-detail').hidden=false;await loadPublicReasoning(trial,current);if(!current())return;
   $('archive-status').textContent='Completed trial. Published arguments and teacher-approved anonymous reasoning are shown. Original ballots and identities remain private.';

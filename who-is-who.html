@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Modern Olympos — Who is Who?</title>
-  <link rel="stylesheet" href="style.css?v=encyclopedia-1" />
-<link rel="stylesheet" href="encyclopedia.css?v=encyclopedia-1"></head>
+  <link rel="stylesheet" href="style.css?v=school-identity-1" />
+<link rel="stylesheet" href="encyclopedia.css?v=school-identity-1"></head>
 <body class="marble-bg">
 
   <header class="site-header">
@@ -27,10 +27,11 @@
   </header>
 
   <main class="encyclopedia-page" id="encyclopedia-page" aria-busy="true">
-    <p class="encyclopedia-eyebrow">Research · Perspectives · Mythology</p><h1>Who is Who?</h1><p>A teacher-managed mythology encyclopedia. Explore different sources and interpretations. <a href="how-it-works.html">How It Works: classroom guide and privacy</a>.</p>
+    <header class="encyclopedia-content-header"><div>    <p class="encyclopedia-eyebrow">Research · Perspectives · Mythology</p><h1>Who is Who?</h1><p>A teacher-managed mythology encyclopedia. Explore different sources and interpretations. <a href="how-it-works.html">How It Works: classroom guide and privacy</a>.</p>
+</div><div id="encyclopedia-search-mount"><form class="encyclopedia-filters" role="search" onsubmit="return false"><label>Search character names <input type="search" id="character-search" autocomplete="off"></label><label>Mythological tradition <select id="tradition-filter"><option value="">All traditions</option></select></label></form></div></header>
     <button type="button" id="encyclopedia-refresh">Refresh entries</button><p id="encyclopedia-status" role="status" aria-live="polite"></p>
     <p id="encyclopedia-back" hidden><a href="who-is-who.html">← All characters</a></p>
-    <div id="encyclopedia-browser"><form class="encyclopedia-filters" role="search" onsubmit="return false"><label>Search character names <input type="search" id="character-search" autocomplete="off"></label><label>Mythological tradition <select id="tradition-filter"><option value="">All traditions</option></select></label></form><p id="encyclopedia-results" role="status" aria-live="polite"></p><div id="encyclopedia-list" class="encyclopedia-grid"></div></div>
+    <div id="encyclopedia-browser"><p id="encyclopedia-results" role="status" aria-live="polite"></p><div id="encyclopedia-list" class="encyclopedia-grid"></div></div>
     <article id="encyclopedia-detail" class="encyclopedia-detail" hidden aria-label="Character research entry"></article>
   </main>
   <script type="module" src="encyclopedia.js"></script>

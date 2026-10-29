@@ -16,3 +16,10 @@
 .admin-workspace #entry-editor{min-width:0;border:1px solid #75664e;border-radius:5px;padding:18px;display:grid;gap:16px;margin-top:16px}.admin-workspace #entry-editor:disabled{opacity:.6}.admin-workspace #entry-delete{background:#602333;color:#fff2f4;border-color:#edb3bd}.admin-workspace #entry-feedback{white-space:pre-wrap}
 .encyclopedia-page :focus-visible{outline:3px solid #edcc91;outline-offset:4px}.hero-research-links a{color:#edcc91}
 @media(max-width:600px){.encyclopedia-page{margin:1rem auto}.encyclopedia-filters{grid-template-columns:1fr;gap:14px}.encyclopedia-detail-header{grid-template-columns:1fr;gap:14px}.encyclopedia-detail .encyclopedia-portrait{width:120px;height:144px}}
+/* Compact research controls remain secondary to the encyclopedia heading. */
+.encyclopedia-content-header{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,380px);gap:28px;align-items:center}
+.encyclopedia-content-header h1{margin:.3rem 0 .7rem}.encyclopedia-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin:0}
+.encyclopedia-filters label{font-size:.85rem;color:#ddd3c1;gap:6px}.encyclopedia-filters input,.encyclopedia-filters select{min-height:44px;padding:8px 10px;background:#202831;color:#f3eee4;border:1px solid #a18d65;font-size:.9rem;border-radius:5px}
+@media(max-width:900px){.encyclopedia-content-header{grid-template-columns:1fr;gap:18px}.encyclopedia-filters{max-width:520px}}
+@media(max-width:420px){.encyclopedia-filters{grid-template-columns:1fr}}
+.encyclopedia-content-header:has(#encyclopedia-search-mount[hidden]){grid-template-columns:1fr}

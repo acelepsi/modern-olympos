@@ -37,3 +37,5 @@
 @media(prefers-reduced-motion:reduce){.admin-workspace *{scroll-behavior:auto!important;transition:none!important}}
 .admin-workspace #account-rows button,.admin-workspace #review-list button+button{background:#2d3540;color:#f3eee4;border-color:#96866a}
 .admin-workspace #reasoning-review-list button+button{background:#602333;color:#fff2f4;border-color:#edb3bd}
+.admin-workspace #school-editor,.admin-workspace #affiliation-editor{display:grid;gap:16px;min-width:0;border:1px solid #75664e;padding:16px;margin:16px 0;border-radius:5px}
+.admin-workspace .checkbox-label{display:flex;flex-direction:row;align-items:center;gap:10px}.admin-workspace .checkbox-label input{flex:0 0 auto;margin:0}.admin-workspace #school-feedback{white-space:pre-wrap}

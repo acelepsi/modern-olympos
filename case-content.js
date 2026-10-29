@@ -1,5 +1,5 @@
 // Shared client-side presentation and optional metadata validation.
-export function chronologicalSubmissions(docs) {
+export function chronologicalSubmissions(docs,withId=false) {
   const time = post => {
     try {
       const value = post.createdAt?.toMillis?.();
@@ -7,10 +7,10 @@ export function chronologicalSubmissions(docs) {
     } catch { return Infinity; }
   };
   // Unknown dates follow known dates. Equal/unknown dates retain snapshot order.
-  return docs.map(item => ({post:item.data()})).sort((a,b) => {
+  return docs.map(item => ({post:item.data(),id:item.id})).sort((a,b) => {
     const left=time(a.post),right=time(b.post);
     return left===right ? 0 : left<right ? -1 : 1;
-  }).map(entry=>entry.post);
+  }).map(entry=>withId?{...entry.post,id:entry.id}:entry.post);
 }
 export function caseCharge(value) {
   if (typeof value !== 'string' || value.length > 2000) throw Error('Charge / Case Description must be text of at most 2000 characters.');
