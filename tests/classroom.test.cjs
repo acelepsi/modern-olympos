@@ -23,7 +23,7 @@ test('lost profile acknowledgement is confirmed from the server without deleting
 test('unconfirmed partial creation gives a recovery message without reporting success',async()=>{
  await assert.rejects(accounts.provisionStudent(input,api({save:async()=>{throw Error('Offline')},read:async()=>{throw Error('Offline')}})),/could not be confirmed.*UID new/);
 });
-function element(){return {textContent:'',children:[],hidden:false,disabled:false,attributes:{},handlers:{},append(...items){this.children.push(...items)},replaceChildren(...items){this.children=items;this.textContent=''},setAttribute(k,v){this.attributes[k]=v},addEventListener(k,v){this.handlers[k]=v}}}
+function element(){return {textContent:'',children:[],hidden:false,disabled:false,attributes:{},handlers:{},append(...items){this.children.push(...items)},replaceChildren(...items){this.children=items;this.textContent=''},setAttribute(k,v){this.attributes[k]=v},getAttribute(k){return this.attributes[k]},addEventListener(k,v){this.handlers[k]=v}}}
 function archive(search='?trial=closed-case'){
  const nodes=new Map(),calls=[];const get=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)};
  const context={document:{getElementById:get,createElement:element},initializeFirebaseClient:()=>({db:{}}),initializeApp(){},getAuth(){},initializeAuth(){},inMemoryPersistence:{},connectAuthEmulator(){},getFirestore(){},connectFirestoreEmulator(){},URL,URLSearchParams,location:{search},
@@ -119,4 +119,19 @@ test('archive orders published arguments independently by createdAt and safely d
 });
 test('legacy archive omits an absent charge instead of rendering a placeholder',async()=>{
  const h=archive();await h.run('loadArchive()');assert.equal(h.get('archive-info').hidden,true);
+});
+
+test('print action uses only the already-visible public archive, with no new reads',async()=>{
+ const h=archive();let prints=0;h.context.window={print:()=>{prints++}};await h.run('loadArchive()');const before=h.calls.length;
+ await h.get('print-case-file').handlers.click();assert.equal(prints,1);assert.equal(h.calls.length,before);assert.ok(h.calls.every(call=>!JSON.stringify(call).match(/votes|students|reasoningReviews/)));
+ h.get('archive-page').attributes['aria-busy']='true';h.get('print-case-file').handlers.click();assert.equal(prints,1);h.get('archive-page').attributes['aria-busy']='false';h.get('archive-detail').hidden=true;h.get('print-case-file').handlers.click();assert.equal(prints,1);
+});
+test('print action remains disabled for missing selected trial and failed/unfinished loads',async()=>{
+ const h=archive('?trial=missing');await h.run('loadArchive()');assert.equal(h.get('print-case-file').disabled,true);
+ h.context.getDocsFromServer=async()=>{throw Error('Offline')};await h.run('loadArchive()');assert.equal(h.get('print-case-file').disabled,true);
+ let resolve;h.context.getDocsFromServer=()=>new Promise(done=>{resolve=done});const load=h.run('loadArchive()');assert.equal(h.get('print-case-file').disabled,true);resolve({docs:[]});await load;assert.equal(h.get('print-case-file').disabled,true);
+});
+test('archive print outcome reports stored numeric majority or tie without changing tallies',()=>{
+ const h=archive('');for(const [summary,text] of [[{guilty:2,notGuilty:1},'Guilty.'],[{guilty:1,notGuilty:2},'Not Guilty.'],[{guilty:1,notGuilty:1},'tied.']]){h.context.summary=summary;h.run('renderTally(summary)');assert.ok(h.get('archive-outcome').textContent.endsWith(text));assert.equal(h.get('archive-verdict').children[2].children[1].textContent,String(summary.guilty+summary.notGuilty))}
+ h.run('renderTally(null)');assert.equal(h.get('archive-outcome').textContent,'');
 });

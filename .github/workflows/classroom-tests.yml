@@ -25,4 +25,6 @@ jobs:
       - run: npm run test:all
       - name: Portrait containment in Chrome (synthetic offline fixtures)
         run: node tests/portrait-layout.browser.cjs
+      - name: Teacher workspace, landing and native print in Chrome
+        run: node tests/platform-polish.browser.cjs
       - run: npm run prepare:site

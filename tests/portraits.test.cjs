@@ -15,5 +15,5 @@ test('portrait frames constrain desktop/mobile and archive images without changi
  assert.match(css,/@media\(max-width:600px\)\{\s*\.dossier \.mugshot\{width:96px;height:96px/);
  assert.match(css,/\.archive-thumbnail\.trial-portrait\{width:48px;height:48px/);
  assert.match(css,/\.archive-character-portrait\.trial-portrait\{width:76px;height:76px/);
- assert.match(fs.readFileSync(path.join(root,'court.html'),'utf8'),/style\.css\?v=mythological-dossier-1/);assert.match(fs.readFileSync(path.join(root,'archive.html'),'utf8'),/style\.css\?v=mythological-dossier-1/);
+ assert.match(fs.readFileSync(path.join(root,'court.html'),'utf8'),/style\.css\?v=package-b-1/);assert.match(fs.readFileSync(path.join(root,'archive.html'),'utf8'),/style\.css\?v=package-b-1/);
 });

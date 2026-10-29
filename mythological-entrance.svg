@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" fill="none">
+<title>Original museum entrance to a mythological court</title>
+<defs>
+ <linearGradient id="hall" x2="0" y2="1"><stop stop-color="#2d3538"/><stop offset="1" stop-color="#0c141a"/></linearGradient>
+ <linearGradient id="marble"><stop stop-color="#20272b"/><stop offset=".4" stop-color="#777365"/><stop offset=".7" stop-color="#42494a"/><stop offset="1" stop-color="#181f25"/></linearGradient>
+ <radialGradient id="light"><stop stop-color="#b49762" stop-opacity=".35"/><stop offset="1" stop-color="#b49762" stop-opacity="0"/></radialGradient>
+ <g id="pillar"><path d="M-73 805H73v28H-73zM-60 780H60v25H-60zM-43 241h86l15 539H-58zM-65 211H65v30H-65zM-80 185H80v26H-80z" fill="url(#marble)" stroke="#b4a586" stroke-opacity=".35"/><path d="M-28 250-38 766M-9 250l-3 516M9 250l3 516M28 250l10 516M-65 198H65M-57 791H57" stroke="#cabd9e" stroke-opacity=".25"/></g>
+</defs>
+<path fill="url(#hall)" d="M0 0h1600v1000H0z"/><ellipse cx="800" cy="420" rx="710" ry="600" fill="url(#light)"/>
+<path d="m260 180 540-210 540 210H260Z" fill="#3d4240" stroke="#9e8b63" stroke-opacity=".4"/>
+<path d="M0 151h1600v34H0zM0 833h1600v34H0zM0 877h1600v24H0zM0 925h1600v75H0z" fill="#41433d" opacity=".65"/>
+<path d="M0 148h1600M0 183h1600M0 866h1600M0 901h1600M0 925h1600" stroke="#b4a078" stroke-opacity=".4"/>
+<path d="M575 832V386a225 225 0 0 1 450 0v446M603 832V386a197 197 0 0 1 394 0v446" stroke="#b3aa90" stroke-opacity=".27" stroke-width="10"/>
+<path d="M633 832V395a167 167 0 0 1 334 0v437" fill="#111a20"/><path d="M800 240v592M650 470h300M650 668h300" stroke="#b5a076" stroke-opacity=".19"/>
+<use href="#pillar" x="125"/><use href="#pillar" x="400"/><use href="#pillar" x="1200"/><use href="#pillar" x="1475"/>
+<!-- Original shallow relief: a balanced scale, olive branches and a classical vase. -->
+<g stroke="#c0ad82" stroke-width="3" opacity=".28"><path d="M730 152h140m-70-60v60m-55-47h110m-98 0-18 27h36l-18-27Zm86 0-18 27h36l-18-27Z"/><path d="M278 760c-25-47-19-92 8-129m-15 80-25-14m27-14 22-15M1322 760c25-47 19-92-8-129m15 80 25-14m-27-14-22-15"/></g>
+<path d="M271 763h44l-7 53h-30l-7-53Zm1014 0h44l-7 53h-30l-7-53Z" fill="#6c6451" opacity=".35"/>
+<path d="m0 1000 800-95 800 95M80 1000l720-95 720 95M400 1000l400-95 400 95" stroke="#c3b697" stroke-opacity=".12"/>
+</svg>
