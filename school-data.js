@@ -23,7 +23,6 @@ export async function saveSchoolAffiliation(uid,schoolId,publish,api){
  const token=api.newToken();
  // Revocation is the first acknowledged write. Later failures leave visibility off.
  await api.assign(uid,{schoolId,publicSchool:false,schoolConsentVersion:token},publish?{schoolId:profile.data().schoolId||'',publicSchool:profile.data().publicSchool===true,schoolConsentVersion:profile.data().schoolConsentVersion||''}:null);
- if(!publish)return {published:false,count:0};
  if(!api.current())throw Error('Context changed; affiliation remains private.');
  const trials=await api.trials();let count=0;
  for(const trial of trials){
@@ -32,9 +31,12 @@ export async function saveSchoolAffiliation(uid,schoolId,publish,api){
   for(const post of posts){
    if(post.status!=='published'||!['prosecution','defense'].includes(post.section))continue;
    if(!api.current())throw Error('Context changed; affiliation remains private.');
-   await api.copy(trial.id,post.id,{schoolName:school.name,countryCode:school.countryCode});count++;
+   await api.removeCopy(trial.id,post.id);
+   if(!api.current())throw Error('Context changed; affiliation remains private.');
+   if(publish){await api.copy(trial.id,post.id,{schoolName:school.name,countryCode:school.countryCode});count++;}
   }
  }
+ if(!publish)return {published:false,count:0};
  if(!api.current())throw Error('Context changed; affiliation remains private.');
  // The real transaction checks a private operation token so an old publish cannot undo withdrawal.
  await api.enable(uid,schoolId,token,school);
@@ -55,4 +57,17 @@ export async function reserveSchoolPermission(uid,data,expected,api){
   if(expected&&((profile.data().schoolConsentVersion||'')!==expected.schoolConsentVersion||(profile.data().schoolId||'')!==expected.schoolId||(profile.data().publicSchool===true)!==expected.publicSchool))throw Error('Affiliation changed before publication; reload before enabling public display.');
   transaction.update(ref,data);
  });
+}
+
+export async function purgeSchoolCopies(uid,api){
+ const trials=await api.trials();
+ for(const trial of trials){
+  if(!api.current())throw Error('Administrator context changed.');
+  for(const post of await api.submissions(trial.id,uid)){
+   if(post.status==='published'&&['prosecution','defense'].includes(post.section)){
+    if(!api.current())throw Error('Administrator context changed.');
+    await api.removeCopy(trial.id,post.id);
+   }
+  }
+ }
 }

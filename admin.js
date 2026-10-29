@@ -366,4 +366,4 @@ $('load-reasoning').addEventListener('click',loadReasoningReview);
 
 setupEncyclopediaAdmin({auth,db,onAuthStateChanged,collection,doc,getDocFromServer,getDocsFromServer,setDoc,deleteDoc});
 
-const schoolManager=setupSchoolAdmin({auth,db,onAuthStateChanged,collection,doc,query,where,getDocFromServer,getDocsFromServer,setDoc,updateDoc,runTransaction});
+const schoolManager=setupSchoolAdmin({auth,db,onAuthStateChanged,collection,doc,query,where,getDocFromServer,getDocsFromServer,setDoc,updateDoc,deleteDoc,runTransaction});
