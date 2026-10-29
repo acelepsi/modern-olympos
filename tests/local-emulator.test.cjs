@@ -124,7 +124,7 @@ test('real school publication is opt-in; token transaction cannot re-enable a wi
 });
 
 test('actual directory helpers publish explicitly, atomically synchronize, withdraw and preserve private data',async()=>{
- const source=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8').replace(/^import .*;\n/gm,'').replace(/^export /gm,'');const c={};vm.createContext(c);vm.runInContext(source('school-data.js')+'\n'+source('school-directory.js'),c);
+ const c=await import(require('node:url').pathToFileURL(path.join(__dirname,'..','school-directory.js')).href);
  const admin=clients.get('admin'),db=admin.db,id='synthetic-homepage-school',school={name:'Synthetic Homepage School',countryCode:'TR',active:true};
  const api={current:()=>true,schoolRef:id=>storeSdk.doc(db,'schools',id),publicRef:id=>storeSdk.doc(db,'publicSchools',id),run:callback=>storeSdk.runTransaction(db,callback)};
  const app=appSdk.initializeApp({projectId:PROJECT,apiKey:'demo-only-not-a-real-api-key'},'homepage-public-reader');apps.push(app);const publicDb=storeSdk.getFirestore(app);storeSdk.connectFirestoreEmulator(publicDb,'127.0.0.1',8080);
