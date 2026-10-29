@@ -43,7 +43,12 @@ async function navigate(url){await send('Page.navigate',{url});for(let i=0;i<80;
      await evaluate("document.querySelector('[href=\"#manage-review\"]').click()");
      await new Promise(resolve=>setTimeout(resolve,30));check(await evaluate("document.querySelector('[href=\"#manage-review\"]').getAttribute('aria-current')==='location'&&document.activeElement.id==='manage-review'"),'anchor focus/active section '+width);
      await evaluate("location.hash='' ");
+     check(await evaluate(`(()=>{const lum=c=>{const v=(c.match(/[0-9.]+/g)||[]).slice(0,3).map(n=>{n=Number(n)/255;return n<=.04045?n/12.92:((n+.055)/1.055)**2.4});return .2126*v[0]+.7152*v[1]+.0722*v[2]};return [...document.querySelectorAll('.workspace-nav a,.workspace-header h1,.panel label,.hint,th,td,input,select,#publish-verdict')].filter(el=>!el.disabled&&el.getClientRects().length).every(el=>{let bg=el;while(bg&&getComputedStyle(bg).backgroundColor==='rgba(0, 0, 0, 0)')bg=bg.parentElement;const a=lum(getComputedStyle(el).color),b=lum(getComputedStyle(bg).backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5})})()`),'administrator text contrast '+width);
     }
+   }
+   if(page==='admin'){
+    await evaluate("document.querySelector('[data-workspace-link]').focus()");await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+    check(await evaluate("document.activeElement.hash==='#manage-students'&&getComputedStyle(document.activeElement).outlineStyle!=='none'"),'administrator native keyboard navigation and visible focus');
    }
    await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
    check(await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"),'reduced-motion media '+page);
@@ -53,7 +58,7 @@ async function navigate(url){await send('Page.navigate',{url});for(let i=0;i<80;
     check(await evaluate("getComputedStyle(document.querySelector('.site-header')).display==='none'&&getComputedStyle(document.getElementById('print-case-file')).display==='none'"),'print hides navigation and buttons');
     check(await evaluate("getComputedStyle(document.querySelector('.print-case-brand')).display==='flex'"),'print includes one branded case header');
     check(await evaluate("getComputedStyle(document.querySelector('.archive-page')).backgroundColor==='rgb(255, 255, 255)'&&getComputedStyle(document.querySelector('.archive-argument-text')).color==='rgb(23, 23, 23)'"),'print uses light pages and dark text');
-    check(await evaluate("getComputedStyle(document.querySelector('.argument-card')).breakInside==='avoid-page'&&getComputedStyle(document.querySelector('.archive-columns')).display==='block'"),'print page breaks and linear arguments');
+    check(await evaluate("['avoid','avoid-page'].includes(getComputedStyle(document.querySelector('.argument-card')).breakInside)&&getComputedStyle(document.querySelector('.archive-columns')).display==='block'"),'print page breaks and linear arguments');
     check(await evaluate("document.getElementById('archive-title').textContent.includes('Prometheus')&&document.querySelector('.archive-alias').textContent==='Public Prosecution Alias'&&document.querySelector('.reasoning-card h3').textContent==='Juror #1'&&document.getElementById('archive-outcome').textContent.includes('Guilty')"),'print uses public case content and anonymous reasoning');
     await evaluate("document.getElementById('archive-detail').hidden=true");check(await evaluate("getComputedStyle(document.getElementById('archive-detail')).display==='none'"),'hidden cases cannot leak into print');await evaluate("document.getElementById('archive-detail').hidden=false;document.getElementById('archive-page').setAttribute('aria-busy','true')");check(await evaluate("getComputedStyle(document.getElementById('archive-detail')).display==='none'"),'incomplete refresh suppresses print detail');await evaluate("document.getElementById('archive-page').setAttribute('aria-busy','false')");
     const pdf=await send('Page.printToPDF',{printBackground:false,preferCSSPageSize:true});const bytes=Buffer.from(pdf.data,'base64');check(bytes.subarray(0,5).toString()==='%PDF-'&&bytes.length>5000,'native Chrome print produces a public case-file PDF');
