@@ -114,8 +114,10 @@ test('real school publication is opt-in; token transaction cannot re-enable a wi
  await saveSchoolAffiliation(student,school,false,api);assert.equal((await storeSdk.getDoc(ref('admin','students/'+student))).data().publicSchool,false);
  const result=await saveSchoolAffiliation(student,school,true,api);assert.ok(result.count>=1);const copyPath='trials/local-preparation/attributions/published-prosecutor';const copy=await storeSdk.getDoc(ref('observer',copyPath));assert.deepEqual(Object.keys(copy.data()).sort(),['countryCode','schoolName']);
  let deny;const revoked=new Promise(resolve=>{deny=resolve});const unsubscribe=storeSdk.onSnapshot(ref('observer',copyPath),{includeMetadataChanges:true},()=>{},error=>deny(error));
- await storeSdk.updateDoc(ref('admin','students/'+student),{publicSchool:false,schoolConsentVersion:'ZYXWVUTSRQPONMLKJIHG'});await assert.rejects(storeSdk.getDocFromServer(ref('observer',copyPath)),error=>error.code==='permission-denied');
- const error=await Promise.race([revoked,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Revocation listener timed out')),7000);timer.unref()})]);assert.equal(error.code,'permission-denied');unsubscribe();
+ await storeSdk.updateDoc(ref('admin','students/'+student),{publicSchool:false,schoolConsentVersion:'ZYXWVUTSRQPONMLKJIHG'});
+ const freshApp=appSdk.initializeApp({projectId:PROJECT,apiKey:'demo-only-not-a-real-api-key'},'fresh-school-public-reader');apps.push(freshApp);const freshDb=storeSdk.getFirestore(freshApp);storeSdk.connectFirestoreEmulator(freshDb,'127.0.0.1',8080);
+ await assert.rejects(storeSdk.getDocFromServer(storeSdk.doc(freshDb,copyPath)),error=>error.code==='permission-denied');
+ const error=await Promise.race([revoked,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Revocation listener timed out')),7000);timer.unref()})]);assert.equal(error.code,'permission-denied');unsubscribe();await assert.rejects(storeSdk.getDocFromServer(ref('observer',copyPath)),error=>error.code==='permission-denied');
  const originalEnable=api.enable;api.enable=async(...args)=>{await storeSdk.updateDoc(ref('admin','students/'+student),{publicSchool:false,schoolConsentVersion:'ZYXWVUTSRQPONMLKJIHG'});return originalEnable(...args)};await assert.rejects(saveSchoolAffiliation(student,school,true,api),/Affiliation changed/);assert.equal((await storeSdk.getDoc(ref('admin','students/'+student))).data().publicSchool,false);
  await assert.rejects(storeSdk.getDoc(ref('observer','students/'+student)),error=>error.code==='permission-denied');
 });

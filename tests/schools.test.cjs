@@ -58,3 +58,8 @@ test('school manager pending save prevents duplicate writes and does not restore
 test('old school authorization cannot enable controls after account switching',async()=>{
  const h=manager();let resolve;h.api.getDocFromServer=()=>new Promise(done=>{resolve=done});const old=h.callbacks[0]({uid:'teacher'});await h.callbacks[0](null);resolve(snapshot({accountType:'teacher',active:true}));await old;assert.equal(h.get('school-editor').disabled,true);assert.equal(h.get('student-school').children.length,0);
 });
+
+test('failed withdrawal is visibly unconfirmed rather than claiming visibility is disabled',async()=>{
+ const h=manager();await h.callbacks[0]({uid:'teacher'});h.get('affiliation-student').value='private-student';h.get('affiliation-student').handlers.change();h.get('affiliation-school').value='school-a';h.get('affiliation-public').checked=false;h.api.getDocFromServer=async ref=>snapshot(ref[0]==='schools'?school:{accountType:'student',schoolId:'school-a',publicSchool:true});h.api.updateDoc=async()=>{throw {code:'unavailable'}};
+ await h.get('affiliation-form').handlers.submit({preventDefault(){}});assert.equal(h.get('affiliation-public').indeterminate,true);assert.match(h.get('school-feedback').textContent,/do not assume withdrawal succeeded/);assert.doesNotMatch(h.get('school-feedback').textContent,/Public school display is disabled/);
+});
