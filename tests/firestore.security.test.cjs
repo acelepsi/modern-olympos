@@ -687,3 +687,36 @@ test('no attribution can be published for drafts, votes or anonymous jury reason
  await schoolFixture();await assertSucceeds(updateDoc(ref(ADMIN,'students/prosecutor'),{publicSchool:true}));for(const id of ['draft','pending','returned','other-juror','missing'])await assertFails(setDoc(ref(ADMIN,'trials/case-a/attributions/'+id),{schoolName:'Synthetic School A',countryCode:'TR'}));
  await assertFails(getDoc(ref(null,'trials/case-b/votes/other-juror')));await assertFails(getDocs(collection(db(null),'trials/case-c/reasoningReviews')));await assertFails(getDoc(ref(null,'students/prosecutor')));
 });
+
+// Homepage directory is a separate, minimal public projection. No private read grants.
+const publicPartner={name:'Approved Synthetic School',countryCode:'TR'};
+async function directoryFixture(){await seed({'schools/partner-a':{...publicPartner,active:true},'schools/partner-private':{name:'Private Synthetic School',countryCode:'RO',active:true},'schools/partner-inactive':{name:'Inactive School',countryCode:'GR',active:false}})}
+for(const uid of [null,'prosecutor','juror','observer','other-teacher',ADMIN])test((uid||'public')+' can read only the separately approved homepage directory',async()=>{
+ await directoryFixture();await assertSucceeds(setDoc(ref(ADMIN,'publicSchools/partner-a'),publicPartner));
+ const result=await assertSucceeds(getDocs(collection(db(uid),'publicSchools')));assert.equal(result.size,1);assert.deepEqual(Object.keys(result.docs[0].data()).sort(),['countryCode','name']);
+ if(uid!==ADMIN){await assertFails(getDocs(collection(db(uid),'schools')));await assertFails(getDoc(ref(uid,'schools/partner-a')))}
+});
+for(const uid of [null,'prosecutor','juror','observer','other-teacher'])test((uid||'public')+' cannot publish, alter or withdraw homepage school entries',async()=>{
+ await directoryFixture();await assertFails(setDoc(ref(uid,'publicSchools/partner-a'),publicPartner));await assertSucceeds(setDoc(ref(ADMIN,'publicSchools/partner-a'),publicPartner));await assertFails(updateDoc(ref(uid,'publicSchools/partner-a'),{name:'Forged'}));await assertFails(deleteDoc(ref(uid,'publicSchools/partner-a')));
+});
+for(const extra of [{studentId:'secret'},{alias:'secret'},{schoolId:'secret'},{studentCount:10},{active:true},{consent:true},{email:'secret@example.invalid'},{name:''},{name:'x'.repeat(161)},{countryCode:'US'},{name:17}])test('public school projection rejects extra/invalid data '+JSON.stringify(extra).slice(0,50),async()=>{
+ await directoryFixture();await assertFails(setDoc(ref(ADMIN,'publicSchools/partner-a'),{...publicPartner,...extra}));
+});
+test('only active existing school with exactly matching name/country can be explicitly published',async()=>{
+ await directoryFixture();await assertFails(setDoc(ref(ADMIN,'publicSchools/missing'),publicPartner));await assertFails(setDoc(ref(ADMIN,'publicSchools/partner-inactive'),{name:'Inactive School',countryCode:'GR'}));await assertFails(setDoc(ref(ADMIN,'publicSchools/partner-a'),{...publicPartner,name:'Other name'}));await assertFails(setDoc(ref(ADMIN,'publicSchools/partner-a'),{...publicPartner,countryCode:'RO'}));await assertSucceeds(setDoc(ref(ADMIN,'publicSchools/partner-a'),publicPartner));
+});
+test('private schools stay unpublished until an administrator action and ordinary private edits remain compatible',async()=>{
+ await directoryFixture();await assertSucceeds(updateDoc(ref(ADMIN,'schools/partner-private'),{name:'Still private'}));assert.equal((await getDocs(collection(db(null),'publicSchools'))).size,0);await assertSucceeds(updateDoc(ref(ADMIN,'schools/partner-private'),{active:false}));
+});
+test('published rename and country change require an atomic matching public copy; stale writes fail',async()=>{
+ await directoryFixture();await setDoc(ref(ADMIN,'publicSchools/partner-a'),publicPartner);
+ await assertFails(updateDoc(ref(ADMIN,'schools/partner-a'),{name:'Renamed'}));await assertFails(updateDoc(ref(ADMIN,'schools/partner-a'),{countryCode:'GR'}));
+ const batch=writeBatch(db(ADMIN));batch.update(ref(ADMIN,'schools/partner-a'),{name:'Renamed',countryCode:'GR'});batch.set(ref(ADMIN,'publicSchools/partner-a'),{name:'Renamed',countryCode:'GR'});await assertSucceeds(batch.commit());assert.deepEqual((await getDoc(ref(null,'publicSchools/partner-a'))).data(),{name:'Renamed',countryCode:'GR'});
+ await assertFails(setDoc(ref(ADMIN,'publicSchools/partner-a'),publicPartner));
+});
+test('deactivation atomically removes a public entry and reactivation never republishes it',async()=>{
+ await directoryFixture();await setDoc(ref(ADMIN,'publicSchools/partner-a'),publicPartner);await assertFails(updateDoc(ref(ADMIN,'schools/partner-a'),{active:false}));const batch=writeBatch(db(ADMIN));batch.update(ref(ADMIN,'schools/partner-a'),{active:false});batch.delete(ref(ADMIN,'publicSchools/partner-a'));await assertSucceeds(batch.commit());assert.equal((await getDocs(collection(db(null),'publicSchools'))).size,0);await assertSucceeds(updateDoc(ref(ADMIN,'schools/partner-a'),{active:true}));assert.equal((await getDocs(collection(db(null),'publicSchools'))).size,0);
+});
+test('public trial statistic may count all existing phases without private nested reads',async()=>{
+ const result=await assertSucceeds(getDocs(collection(db(null),'trials')));assert.equal(result.size,3);for(const child of ['votes','assignments','reasoningReviews'])await assertFails(getDocs(collection(db(null),'trials/case-a',child)));await assertFails(getDocs(collection(db(null),'students')));
+});

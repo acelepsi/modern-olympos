@@ -11,6 +11,6 @@ for(const value of ['http://example.org/source','https://','https://bad host/a',
 test('unchanged HTTP source is retained; changed HTTP source is rejected',()=>{assert.equal(c.validEvidence('http://example.org/a','http://example.org/a'),true);assert.equal(c.validEvidence('http://example.org/b','http://example.org/a'),false)});
 test('all browser Firebase modules match the installed test SDK version',()=>{
  const version=require('../package.json').devDependencies.firebase;let count=0;
- for(const name of ['app.js','admin.js','archive.js','encyclopedia.js'])for(const match of fs.readFileSync(path.join(root,name),'utf8').matchAll(/www\.gstatic\.com\/firebasejs\/([^/]+)\//g)){assert.equal(match[1],version);count++}
- assert.equal(count,12);assert.equal(require('../node_modules/firebase/package.json').version,version);
+ for(const name of ['app.js','admin.js','archive.js','encyclopedia.js','international-client.js'])for(const match of fs.readFileSync(path.join(root,name),'utf8').matchAll(/www\.gstatic\.com\/firebasejs\/([^/]+)\//g)){assert.equal(match[1],version);count++}
+ assert.equal(count,15);assert.equal(require('../node_modules/firebase/package.json').version,version);
 });

@@ -122,3 +122,18 @@ test('real school publication is opt-in; token transaction cannot re-enable a wi
  const originalEnable=api.enable;api.enable=async(...args)=>{await storeSdk.updateDoc(ref('admin','students/'+student),{publicSchool:false,schoolConsentVersion:'ZYXWVUTSRQPONMLKJIHG'});return originalEnable(...args)};await assert.rejects(saveSchoolAffiliation(student,school,true,api),/Affiliation changed/);assert.equal((await storeSdk.getDoc(ref('admin','students/'+student))).data().publicSchool,false);
  await assert.rejects(storeSdk.getDoc(ref('observer','students/'+student)),error=>error.code==='permission-denied');
 });
+
+test('actual directory helpers publish explicitly, atomically synchronize, withdraw and preserve private data',async()=>{
+ const source=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8').replace(/^import .*;\n/gm,'').replace(/^export /gm,'');const c={};vm.createContext(c);vm.runInContext(source('school-data.js')+'\n'+source('school-directory.js'),c);
+ const admin=clients.get('admin'),db=admin.db,id='synthetic-homepage-school',school={name:'Synthetic Homepage School',countryCode:'TR',active:true};
+ const api={current:()=>true,schoolRef:id=>storeSdk.doc(db,'schools',id),publicRef:id=>storeSdk.doc(db,'publicSchools',id),run:callback=>storeSdk.runTransaction(db,callback)};
+ const app=appSdk.initializeApp({projectId:PROJECT,apiKey:'demo-only-not-a-real-api-key'},'homepage-public-reader');apps.push(app);const publicDb=storeSdk.getFirestore(app);storeSdk.connectFirestoreEmulator(publicDb,'127.0.0.1',8080);
+ const publicRef=storeSdk.doc(publicDb,'publicSchools',id);
+ await c.saveDirectorySchool(id,school,api);assert.equal((await storeSdk.getDoc(publicRef)).exists(),false);
+ await c.publishDirectorySchool(id,school,true,api);assert.deepEqual((await storeSdk.getDoc(publicRef)).data(),{name:school.name,countryCode:'TR'});
+ await assert.rejects(storeSdk.getDocs(storeSdk.collection(publicDb,'schools')),error=>error.code==='permission-denied');await assert.rejects(storeSdk.getDocs(storeSdk.collection(publicDb,'students')),error=>error.code==='permission-denied');
+ await c.saveDirectorySchool(id,{...school,name:'Renamed Synthetic School',countryCode:'RO'},api);assert.deepEqual((await storeSdk.getDoc(publicRef)).data(),{name:'Renamed Synthetic School',countryCode:'RO'});
+ await c.saveDirectorySchool(id,{...school,active:false},api);assert.equal((await storeSdk.getDoc(publicRef)).exists(),false);await c.saveDirectorySchool(id,school,api);assert.equal((await storeSdk.getDoc(publicRef)).exists(),false);
+ await c.publishDirectorySchool(id,school,true,api);await c.publishDirectorySchool(id,school,false,api);assert.equal((await storeSdk.getDoc(publicRef)).exists(),false);assert.equal((await storeSdk.getDoc(api.schoolRef(id))).data().active,true);
+ const actual=await storeSdk.getDocs(storeSdk.collection(publicDb,'trials')),trusted=await storeSdk.getDocs(storeSdk.collection(db,'trials'));assert.equal(actual.size,trusted.size);
+});

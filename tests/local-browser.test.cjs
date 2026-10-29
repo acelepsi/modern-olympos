@@ -55,7 +55,7 @@ for (const fail of ['connectAuthEmulator', 'connectFirestoreEmulator']) test(`${
   assert.throws(h.run, /Synthetic/); assert.equal(h.calls.filter(c => c[0] === 'initializeApp').length, 1);
   assert.equal(h.calls[0][1].projectId, PROJECT); assert.ok(!h.calls.some(c => c[0] === 'getAuth'));
 });
-for (const file of ['app.js', 'admin.js']) test(`${file} uses the sole shared initialization path`, () => {
+for (const file of ['app.js', 'admin.js', 'international-client.js']) test(`${file} uses the sole shared initialization path`, () => {
   const content = fs.readFileSync(path.join(root, file), 'utf8');
   assert.match(content, /import \{\s*initializeFirebaseClient\s*\} from ['"]\.\/firebase-client.js/);
   assert.equal((content.match(/initializeFirebaseClient\(/g) || []).length, file==='admin.js'?2:1);
