@@ -137,3 +137,16 @@ test('actual directory helpers publish explicitly, atomically synchronize, withd
  await c.publishDirectorySchool(id,school,true,api);await c.publishDirectorySchool(id,school,false,api);assert.equal((await storeSdk.getDoc(publicRef)).exists(),false);assert.equal((await storeSdk.getDoc(api.schoolRef(id))).data().active,true);
  const actual=await storeSdk.getDocs(storeSdk.collection(publicDb,'trials')),trusted=await storeSdk.getDocs(storeSdk.collection(db,'trials'));assert.equal(actual.size,trusted.size);
 });
+
+test('actual school batch uses isolated real emulator Auth, preserves teacher session and excludes existing logins',async()=>{
+ const {createStudentBatch}=await import(require('node:url').pathToFileURL(path.join(__dirname,'..','student-batch.js')).href),{provisionStudent}=await import(require('node:url').pathToFileURL(path.join(__dirname,'..','student-accounts.js')).href);
+ const admin=clients.get('admin'),teacherUid=admin.auth.currentUser.uid,school={id:'batch-private-school',name:'Synthetic Batch School',countryCode:'GR',active:true};await storeSdk.setDoc(storeSdk.doc(admin.db,'schools',school.id),{name:school.name,countryCode:school.countryCode,active:true});
+ let sequence=0;const created=[];
+ const api={current:()=>admin.auth.currentUser.uid===teacherUid,school:async id=>(await storeSdk.getDocFromServer(storeSdk.doc(admin.db,'schools',id))).data(),created:student=>created.push(student),provision:(input,current)=>provisionStudent(input,{
+  current,open:()=>{const app=appSdk.initializeApp({projectId:PROJECT,apiKey:'demo-only-not-a-real-api-key'},'batch-isolated-'+(++sequence));const auth=authSdk.initializeAuth(app,{persistence:authSdk.inMemoryPersistence});authSdk.connectAuthEmulator(auth,'http://127.0.0.1:9099');return {app,auth,accountDomain:account('observer').email.split('@')[1]}},create:authSdk.createUserWithEmailAndPassword,remove:authSdk.deleteUser,close:session=>appSdk.deleteApp(session.app),save:(uid,profile)=>storeSdk.setDoc(storeSdk.doc(admin.db,'students',uid),profile),read:uid=>storeSdk.getDocFromServer(storeSdk.doc(admin.db,'students',uid))
+ })};
+ const batch=createStudentBatch(school,api);batch.add(2);batch.edit(0,'name','Synthetic Batch One');batch.edit(1,'name','Synthetic Batch Two');batch.generate();await batch.create();assert.equal(created.length,2);assert.equal(batch.credentials().length,2);assert.equal(admin.auth.currentUser.uid,teacherUid);
+ for(const student of created){const profile=(await storeSdk.getDocFromServer(storeSdk.doc(admin.db,'students',student.id))).data();assert.equal(profile.schoolId,school.id);assert.equal(profile.publicSchool,false);assert.equal(Object.hasOwn(profile,'password'),false)}
+ const duplicate=createStudentBatch(school,api);duplicate.add(1);duplicate.edit(0,'name','Different Alias');duplicate.edit(0,'code',batch.rows[0].code);duplicate.generate();await duplicate.create();assert.equal(duplicate.rows[0].state,'exists');assert.equal(duplicate.credentials().length,0);assert.equal(created.length,2);assert.equal(admin.auth.currentUser.uid,teacherUid);
+ batch.clear();duplicate.clear();assert.equal(batch.credentials().length,0);
+});

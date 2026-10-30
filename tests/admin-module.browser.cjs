@@ -15,7 +15,7 @@ const records=new Map([
 ]);
 window.syntheticWrites=[];window.syntheticReads=[];window.syntheticDeletes=[];window.syntheticFail=[];window.syntheticSet=(key,data)=>data===null?records.delete(key):records.set(key,data);const callbacks=[];let sequence=0;
 const auth={currentUser:{uid:'synthetic-admin'}},db={};
-export function initializeFirebaseClient(){return {app:{},auth,db}}
+export function initializeFirebaseClient(_,options={}){return {app:{},auth:options.isolatedAuth?{currentUser:null}:auth,db,accountDomain:'students.demo-modern-olympos.invalid'}}
 export function initializeApp(){return {}}
 export async function deleteApp(){}
 export function getAuth(){return auth}
@@ -27,8 +27,8 @@ export function connectFirestoreEmulator(){}
 export function onAuthStateChanged(_,callback){callbacks.push(callback);queueMicrotask(()=>callback(auth.currentUser));return()=>{}}
 export async function signOut(){auth.currentUser=null;await Promise.all(callbacks.map(callback=>callback(null)))}
 export async function signInWithEmailAndPassword(){throw Error('Account creation/login outside this synthetic test')}
-export async function createUserWithEmailAndPassword(){throw Error('Student accounts must not change')}
-export async function deleteUser(){throw Error('Student accounts must not change')}
+window.syntheticAuthCreates=[];export async function createUserWithEmailAndPassword(isolated,email){if(isolated===auth)throw Error('Must use isolated Auth');if(email.startsWith('already-exists@')||window.syntheticAuthCreates.some(row=>row.email===email))throw {code:'auth/email-already-in-use'};const user={uid:'synthetic-new-'+(++sequence),email};window.syntheticAuthCreates.push({email,uid:user.uid});isolated.currentUser=user;return {user}}
+export async function deleteUser(user){if(user.uid==='synthetic-admin')throw Error('Teacher deletion forbidden');}
 export function collection(_, ...parts){return {path:parts.join('/')}}
 export function doc(base,...parts){return parts.length?{path:parts.join('/'),id:parts.at(-1)}:{path:base.path+'/school'+(++sequence),id:'school'+sequence}}
 export function where(...args){return args}
@@ -101,9 +101,32 @@ async function waitFor(expression,label){for(let i=0;i<100;i++){if(errors.length
   await evaluate("document.getElementById('school-active').checked=false;document.getElementById('school-form').requestSubmit()");
   await waitFor("window.syntheticDeletes.some(key=>key.startsWith('publicSchools/'))&&!document.getElementById('school-public-status').textContent.startsWith('Published')",'deactivation removes public copy');
   check(await evaluate("document.getElementById('school-publish').disabled"),'inactive school cannot be published');
+  // Exercise the actual administrator batch module without production Auth/data.
+  await evaluate("document.getElementById('batch-school').value='existing-school';document.getElementById('batch-school').dispatchEvent(new Event('change'));document.getElementById('batch-count').value='30';document.getElementById('batch-add').click();document.getElementById('batch-generate').click();[...document.querySelectorAll('#batch-rows tr')].forEach((row,i)=>{const inputs=row.querySelectorAll('input');inputs[0].value='Synthetic Batch Alias '+i;inputs[0].dispatchEvent(new Event('input'));inputs[1].value=i===29?'already-exists':'batch-code-'+String(i).padStart(2,'0');inputs[1].dispatchEvent(new Event('input'))})");
+  check(await evaluate("document.getElementById('batch-school').disabled&&document.querySelectorAll('#batch-rows tr').length===30&&document.querySelectorAll('#batch-rows input').length===60"),'one-school batch with editable aliases/codes and no password inputs');
+  await evaluate("document.getElementById('batch-create').click();document.getElementById('batch-create').click()");
+  await waitFor("document.getElementById('batch-feedback').textContent.startsWith('Batch processed')",'bulk creation');
+  check(await evaluate("window.syntheticAuthCreates.length===29&&document.getElementById('batch-rows').textContent.includes('Code already exists')&&window.syntheticWrites.filter(write=>write.path.startsWith('students/synthetic-new-')).every(write=>write.data.schoolId==='existing-school'&&write.data.publicSchool===false&&!('password' in write.data))"),'bulk sequentially creates only new private school accounts, no password profiles');
+  await evaluate("document.getElementById('batch-create').click()");await new Promise(resolve=>setTimeout(resolve,30));check(await evaluate("window.syntheticAuthCreates.length===29"),'duplicate retry never recreates success/existing accounts');
+  // Simulate opening the native print dialog, then ask Chrome itself for the A4 PDF.
+  await evaluate("window.print=()=>{window.syntheticPrints=(window.syntheticPrints||0)+1};document.getElementById('batch-print').click()");
+  check(await evaluate("document.querySelectorAll('#school-login-sheet tbody tr').length===29&&document.getElementById('school-login-sheet').textContent.includes('STUDENT LOGIN CREDENTIALS')&&!document.getElementById('school-login-sheet').textContent.includes('already-exists')&&!document.getElementById('school-login-sheet').textContent.includes('synthetic-new-')&&!document.getElementById('school-login-sheet').textContent.includes('existing-school')&&document.getElementById('school-login-sheet').textContent.includes('Existing School')"),'sheet contains only current successful aliases/codes/passwords with no UIDs/internal IDs');
+  await send('Emulation.setEmulatedMedia',{media:'print'});
+  check(await evaluate("getComputedStyle(document.querySelector('main')).display==='none'&&getComputedStyle(document.getElementById('school-login-sheet')).display==='block'&&getComputedStyle(document.querySelector('#school-login-sheet thead')).display==='table-header-group'"),'credential-only print content and repeated A4 table headings');
+  const loginPdf=await send('Page.printToPDF',{printBackground:false,preferCSSPageSize:true}),pdfBytes=Buffer.from(loginPdf.data,'base64');
+  check(pdfBytes.subarray(0,5).toString()==='%PDF-'&&pdfBytes.length>5000,'native Chrome produces an actual school credentials PDF');
+  const pages=[...pdfBytes.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length;check(pages>=2,'29 successful credentials paginate across multiple A4 pages');
+  await send('Emulation.setEmulatedMedia',{media:'screen'});
+  await evaluate("window.dispatchEvent(new Event('afterprint'))");check(await evaluate("document.getElementById('school-login-sheet').children.length===0&&!document.body.classList.contains('login-sheet-print')"),'afterprint removes password-bearing print DOM without claiming a successful save');
+  check(await evaluate("(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented})()"),'undownloaded batch triggers a leave warning after print cancellation');
+  await evaluate("document.getElementById('batch-saved').click()");check(await evaluate("(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return !event.defaultPrevented})()"),'explicit saved acknowledgement releases warning');
+  for(const width of [320,375,768,1024,1280]){await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:false});check(await evaluate("document.documentElement.scrollWidth<=innerWidth&&document.getElementById('batch-print').getBoundingClientRect().right<=innerWidth"),'school batch controls fit '+width+'px');}
+  await evaluate("window.confirm=()=>false;document.getElementById('batch-clear').click()");check(await evaluate("document.querySelectorAll('#batch-rows tr').length===30"),'cancelled discard preserves credentials');
+  await evaluate("window.confirm=()=>true;document.getElementById('batch-print').click()");
   await evaluate("document.getElementById('logout').click()");
   await waitFor("document.getElementById('dashboard').hidden&&document.getElementById('school-editor').disabled",'existing sign out');
   check(await evaluate("document.getElementById('school-name').value===''&&document.getElementById('student-school').options.length===0"),'sign out clears private school editor');
+  check(await evaluate("document.getElementById('batch-rows').children.length===0&&document.getElementById('school-login-sheet').children.length===0&&document.getElementById('batch-school').options.length===0&&document.getElementById('batch-print').disabled"),'logout scrubs batch, private school choices and sensitive print DOM');
   check(errors.length===0,'no unexpected JavaScript console errors throughout school management');
   await navigate(`http://127.0.0.1:${server.address().port}/index.html`);
   await waitFor("document.getElementById('international-schools').textContent==='0'&&document.getElementById('international-trials').textContent==='1'",'empty approved directory and actual trial count');

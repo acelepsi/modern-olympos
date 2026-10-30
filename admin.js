@@ -1,3 +1,4 @@
+import {setupStudentBatchAdmin} from './student-batch-admin.js';
 import {setupSchoolAdmin} from './school-admin.js';
 import {setupEncyclopediaAdmin} from './encyclopedia-admin.js';
 import {caseCharge} from './case-content.js';
@@ -291,6 +292,12 @@ function renderAccounts(){
  }
  if(!students.length)$('student-account-status').textContent='No student accounts yet. Create one below.';
 }
+function provisionStudentAccount(input,current){return provisionStudent(input,{
+   current,
+   open:()=>initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator},{name:'student-provision-'+(++provisionSequence),isolatedAuth:true}),
+   create:createUserWithEmailAndPassword,remove:deleteUser,close:session=>deleteApp(session.app),
+   save:(id,profile)=>setDoc(doc(db,'students',id),profile),read:id=>getDocFromServer(doc(db,'students',id))
+  });}
 $('student-account-form').addEventListener('submit',async event=>{
  event.preventDefault();if(!adminAuthorized||creatingStudent)return;
  const revision=authRevision,uid=auth.currentUser?.uid,current=()=>adminAuthorized&&currentAdmin(revision,uid);
@@ -299,12 +306,7 @@ $('student-account-form').addEventListener('submit',async event=>{
  $('student-password').value='';$('student-account-status').textContent='Creating student access…';
  try{
   input.schoolId=schoolManager.creationSchool();
-  const student=await provisionStudent(input,{
-   current,
-   open:()=>initializeFirebaseClient({initializeApp,getAuth,initializeAuth,inMemoryPersistence,connectAuthEmulator,getFirestore,connectFirestoreEmulator},{name:'student-provision-'+(++provisionSequence),isolatedAuth:true}),
-   create:createUserWithEmailAndPassword,remove:deleteUser,close:session=>deleteApp(session.app),
-   save:(id,profile)=>setDoc(doc(db,'students',id),profile),read:id=>getDocFromServer(doc(db,'students',id))
-  });
+  const student=await provisionStudentAccount(input,current);
   if(!current())return;
   students.push(student);renderAccounts();schoolManager.reload();await renderStudents();if(!current())return;
   $('student-code').value='';$('student-name').value='';$('student-school').value='';
@@ -367,3 +369,5 @@ $('load-reasoning').addEventListener('click',loadReasoningReview);
 setupEncyclopediaAdmin({auth,db,onAuthStateChanged,collection,doc,getDocFromServer,getDocsFromServer,setDoc,deleteDoc});
 
 const schoolManager=setupSchoolAdmin({auth,db,onAuthStateChanged,collection,doc,query,where,getDocFromServer,getDocsFromServer,setDoc,updateDoc,deleteDoc,runTransaction});
+
+setupStudentBatchAdmin({auth,db,onAuthStateChanged,collection,doc,getDocFromServer,getDocsFromServer,provision:provisionStudentAccount,created:student=>{students.push(student);renderAccounts();schoolManager.reload();renderStudents();}});
