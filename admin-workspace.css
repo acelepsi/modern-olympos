@@ -39,3 +39,23 @@
 .admin-workspace #reasoning-review-list button+button{background:#602333;color:#fff2f4;border-color:#edb3bd}
 .admin-workspace #school-editor,.admin-workspace #affiliation-editor{display:grid;gap:16px;min-width:0;border:1px solid #75664e;padding:16px;margin:16px 0;border-radius:5px}
 .admin-workspace .checkbox-label{display:flex;flex-direction:row;align-items:center;gap:10px}.admin-workspace .checkbox-label input{flex:0 0 auto;margin:0}.admin-workspace #school-feedback{white-space:pre-wrap}
+
+/* Temporary, school-specific credential printout; never part of the public archive. */
+#batch-rows input{min-width:150px}.batch-actions{display:flex;flex-wrap:wrap;gap:4px}
+#school-login-sheet{display:none}
+@media print{
+ @page{size:A4;margin:14mm}
+ body.login-sheet-print{background:#fff!important;color:#161616!important}
+ body.login-sheet-print>main{display:none!important}
+ body.login-sheet-print #school-login-sheet[hidden]{display:block!important;font:10pt Arial,sans-serif;color:#161616;background:#fff}
+ #school-login-sheet h1{font: bold 16pt Georgia,serif;letter-spacing:0;margin:0 0 8mm}
+ #school-login-sheet h2{font:bold 13pt Georgia,serif;margin:0 0 4mm}
+ #school-login-sheet p{margin:3mm 0;line-height:1.5;overflow-wrap:anywhere}
+ #school-login-sheet img{position:static;display:inline-block;width:42px;height:28px;object-fit:contain;vertical-align:middle;margin-right:8px}
+ #school-login-sheet table{width:100%;min-width:0;border-collapse:collapse;table-layout:fixed;font:10pt Arial,sans-serif}
+ #school-login-sheet thead{display:table-header-group}
+ #school-login-sheet tr{break-inside:avoid;page-break-inside:avoid}
+ #school-login-sheet td,#school-login-sheet th{border:1px solid #777;padding:3mm;text-align:left;color:#161616;background:#fff;overflow-wrap:anywhere}
+ #school-login-sheet td:last-child{font-family:monospace;font-size:11pt}
+ #school-login-sheet th{background:#eee;font-weight:bold}
+}

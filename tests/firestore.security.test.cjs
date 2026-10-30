@@ -720,3 +720,12 @@ test('deactivation atomically removes a public entry and reactivation never repu
 test('public trial statistic may count all existing phases without private nested reads',async()=>{
  const result=await assertSucceeds(getDocs(collection(db(null),'trials')));assert.equal(result.size,3);for(const child of ['votes','assignments','reasoningReviews'])await assertFails(getDocs(collection(db(null),'trials/case-a',child)));await assertFails(getDocs(collection(db(null),'students')));
 });
+
+// Package E adds no deletion permission or password storage fields.
+for(const uid of [null,'prosecutor','other-teacher',ADMIN])test((uid||'public')+' cannot delete administrator/teacher profiles',async()=>{
+ for(const teacher of [ADMIN,'other-teacher'])await assertFails(deleteDoc(ref(uid,'students/'+teacher)));
+});
+test('deactivation preserves contributions, ballots and tally; passwords remain disallowed in profiles',async()=>{
+ const contribution=storedSubmission({status:'published'});await seed({'trials/case-a/submissions/history':contribution,'trials/case-c/votes/prosecutor':{choice:'guilty',reason:'Synthetic historical reasoning.',castAt:Timestamp.fromMillis(1000)},'trials/case-c':{title:'Historical trial',status:'closed',verdictSummary:{guilty:1,notGuilty:0}}});
+ await assertSucceeds(updateDoc(ref(ADMIN,'students/prosecutor'),{active:false}));assert.equal((await getDoc(ref(ADMIN,'trials/case-a/submissions/history'))).data().text,contribution.text);assert.equal((await getDoc(ref(ADMIN,'trials/case-c/votes/prosecutor'))).data().choice,'guilty');assert.deepEqual((await getDoc(ref(null,'trials/case-c'))).data().verdictSummary,{guilty:1,notGuilty:0});await assertFails(updateDoc(ref(ADMIN,'students/prosecutor'),{password:'NeverStorePlaintext123!'}));await assertFails(deleteDoc(ref(ADMIN,'students/prosecutor')));
+});
