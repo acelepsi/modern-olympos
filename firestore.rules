@@ -209,10 +209,61 @@ service cloud.firestore {
         request.resource.data.status in ['draft','pending'] && request.resource.data.feedback == '');
     allow delete: if false;
    }
+   // Public roster IDs are random per trial; identity links/consent stay private.
+   function validRosterCopy(id, data) {
+    let uid = getAfter(/databases/$(database)/documents/trials/$(trialId)/rosterSources/$(id)).data.uid;
+    let permission = getAfter(/databases/$(database)/documents/trials/$(trialId)/rosterPermissions/$(uid)).data;
+    let profile = getAfter(/databases/$(database)/documents/students/$(uid)).data;
+    let schoolId = profile.get('schoolId','');
+    return id.matches('^[A-Za-z0-9]{20}$') && permission.approved == true && permission.publicId == id
+     && profile.accountType == 'student' && profile.active == true
+     && data.keys().hasOnly(['alias','role','schoolName','countryCode'])
+     && data.alias is string && data.alias.size() > 0 && data.alias.size() <= 100 && data.alias == profile.displayName
+     && data.role in ['prosecutor','defender','juror']
+     && data.role == getAfter(/databases/$(database)/documents/trials/$(trialId)/assignments/$(uid)).data.role
+     && data.schoolName is string && data.schoolName.size() <= 160
+     && (schoolId == '' ? data.schoolName == '' && data.countryCode == '' :
+       (getAfter(/databases/$(database)/documents/schools/$(schoolId)).data.active == true
+        && data.schoolName == getAfter(/databases/$(database)/documents/schools/$(schoolId)).data.name
+        && data.countryCode in ['TR','RO','GR']
+        && data.countryCode == getAfter(/databases/$(database)/documents/schools/$(schoolId)).data.countryCode));
+   }
+   match /publicRoster/{id} {
+    allow read: if admin() || get(/databases/$(database)/documents/settings/currentTrial).data.trialId == trialId;
+    allow create, update: if admin() && validRosterCopy(id,request.resource.data);
+    allow delete: if admin();
+   }
+   match /rosterSources/{id} {
+    allow read: if admin();
+    allow create: if admin() && id.matches('^[A-Za-z0-9]{20}$') && request.resource.data.keys().hasOnly(['uid'])
+     && request.resource.data.uid is string
+     && getAfter(/databases/$(database)/documents/students/$(request.resource.data.uid)).data.accountType == 'student'
+     && getAfter(/databases/$(database)/documents/trials/$(trialId)/rosterPermissions/$(request.resource.data.uid)).data.publicId == id;
+    allow update: if admin() && request.resource.data == resource.data;
+    allow delete: if false;
+   }
+   match /rosterPermissions/{uid} {
+    allow read: if admin();
+    allow create, update: if admin() && request.resource.data.keys().hasOnly(['approved','publicId'])
+     && request.resource.data.publicId is string && request.resource.data.publicId.matches('^[A-Za-z0-9]{20}$')
+     && request.resource.data.approved is bool
+     && (request.method == 'create' || request.resource.data.publicId == resource.data.publicId)
+     && (request.resource.data.approved == false ?
+       !existsAfter(/databases/$(database)/documents/trials/$(trialId)/publicRoster/$(request.resource.data.publicId)) :
+       (getAfter(/databases/$(database)/documents/trials/$(trialId)/rosterSources/$(request.resource.data.publicId)).data.uid == uid
+        && validRosterCopy(request.resource.data.publicId,getAfter(/databases/$(database)/documents/trials/$(trialId)/publicRoster/$(request.resource.data.publicId)).data)));
+    allow delete: if false;
+   }
+   function rosterRoleSynced(uid) {
+    let path = /databases/$(database)/documents/trials/$(trialId)/rosterPermissions/$(uid);
+    return !existsAfter(path) || getAfter(path).data.approved != true ||
+     (request.resource.data.role in ['prosecutor','defender','juror'] &&
+      getAfter(/databases/$(database)/documents/trials/$(trialId)/publicRoster/$(getAfter(path).data.publicId)).data.role == request.resource.data.role);
+   }
    match /assignments/{uid} {
     allow get: if own(uid) || admin();
     allow list: if admin();
-    allow create, update: if admin() && request.resource.data.keys().hasOnly(['role']) && request.resource.data.role in ['unassigned','prosecutor','defender','juror'];
+    allow create, update: if admin() && request.resource.data.keys().hasOnly(['role']) && request.resource.data.role in ['unassigned','prosecutor','defender','juror'] && rosterRoleSynced(uid);
     allow delete: if false;
    }
   }

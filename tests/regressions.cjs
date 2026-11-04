@@ -47,7 +47,7 @@ function harness(file) {
     setDoc: async () => {}, updateDoc: async () => {}, addDoc: async () => {}, serverTimestamp: () => 'server-time',
     signOut: async () => {}, signInWithEmailAndPassword: async () => {},
     setupSchoolAdmin:()=>({creationSchool:()=>'',reload(){},publish:async()=>{}}),createSchoolAttribution:()=>({clear(){},render(){}}),
-    setupStudentBatchAdmin(){},setupEncyclopediaAdmin(){},deleteDoc:async()=>{},
+    setupCourtRoster:()=>({select(){}}),filterRoleStudents:items=>items,COUNTRIES:{},saveRoleWithRoster:async(trial,uid,role)=>{await c.setDoc(['trials',trial,'assignments',uid],{role});return false},setRosterApproval:async()=>{},revokeStudentRosters:async()=>{},setupStudentBatchAdmin(){},setupEncyclopediaAdmin(){},deleteDoc:async()=>{},
     setupCourtTabs:()=>({select(){}}),setupCourtCounters(){},updateCourtCounters(){},renderTrialProgress(){},
     createVoteConfirmation:()=>({ask:async()=>c.confirm(),cancel(){}}),
     confirm: () => true, alert: message => { throw Error(message); },
@@ -434,7 +434,7 @@ for (const existing of [true, false]) {
     await h.get('trial-form').handlers.submit({ preventDefault() {} });
     assert.equal(h.get('trial-select').value, id);
     assert.equal(h.get('trial-title').value, 'Saved title');
-    assert.deepEqual(reads.map(ref => ref.join('/')).sort(), ['assignments', 'submissions', 'votes'].map(c => `trials/${id}/${c}`).sort());
+    assert.deepEqual(reads.map(ref => ref.join('/')).sort(), ['schools',...['assignments', 'rosterPermissions', 'submissions', 'votes'].map(c => `trials/${id}/${c}`)].sort());
     assert.deepEqual(writes[0].ref, ['trials', id]);
   });
 }

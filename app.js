@@ -1,3 +1,4 @@
+import {setupCourtRoster} from './court-roster.js';
 import {createSchoolAttribution} from './school-attribution.js';
 import {renderTrialProgress,updateCourtCounters,setupCourtCounters,setupCourtTabs,createVoteConfirmation} from './court-ui.js';
 import {chronologicalSubmissions,validEvidence} from './case-content.js';
@@ -245,6 +246,7 @@ function subscribeAssignmentForActiveTrial(user, revision) {
 }
 
 // A public pointer selects the current case for every visitor, even before login.
+const courtRoster=setupCourtRoster({subscribe:(trial,next,error)=>onSnapshot(collection(db,'trials',trial,'publicRoster'),{includeMetadataChanges:true},next,error)});
 unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap => {
   const nextId = snap.exists() ? snap.data().trialId : null;
   document.getElementById("court-status").textContent=nextId?"":"No active trial yet. Your teacher will activate a case.";
@@ -253,7 +255,7 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
   const revision = ++trialRevision;
   currentTrial.verdictSummary = null;
   renderPublicVerdict();
-  activeTrialId = nextId || null;
+  activeTrialId = nextId || null;courtRoster.select(activeTrialId);
   if (unsubscribeTrial) unsubscribeTrial();
   unsubscribeTrial = null;
   const title = document.getElementById("defendant-name");
@@ -266,13 +268,14 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
     unsubscribeTrial = onSnapshot(doc(db, "trials", activeTrialId), trialSnap => {
       if (revision !== trialRevision) return;
       if (!trialSnap.exists()) {
+        courtRoster.select(null);
         if (title) title.textContent = "Trial unavailable";
         renderPortrait(document.getElementById("mugshot"),null);
         currentTrial.verdictSummary=null;setTrialStatus("closed",false);
         document.getElementById("court-status").textContent="The selected trial is unavailable. Please ask your teacher.";
         return;
       }
-      const data = trialSnap.data();
+      const data = trialSnap.data();courtRoster.select(activeTrialId);
       currentTrial.verdictSummary = data.verdictSummary || null;
       renderPublicVerdict();
       if (title) title.textContent = data.title || activeTrialId;
@@ -280,11 +283,11 @@ unsubscribeActiveTrial = onSnapshot(doc(db, "settings", "currentTrial"), snap =>
       if (charge) {charge.textContent = typeof data.charge==='string'?data.charge:"";charge.hidden=!charge.textContent;}
       setTrialStatus(data.status || "closed",['trial','verdict','closed'].includes(data.status));
       refreshMyVote();
-    }, err => { if (revision !== trialRevision)return;clearPrivateContext();renderPortrait(document.getElementById("mugshot"),null);currentTrial.verdictSummary=null;setTrialStatus("closed",false);document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
+    }, err => { if (revision !== trialRevision)return;courtRoster.select(null);clearPrivateContext();renderPortrait(document.getElementById("mugshot"),null);currentTrial.verdictSummary=null;setTrialStatus("closed",false);document.getElementById("court-status").textContent="Unable to load this trial. Reload to retry."; });
   }
   subscribeAssignmentForActiveTrial(auth.currentUser, authRevision);
   refreshSubmissionListeners();
-}, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();renderPortrait(document.getElementById("mugshot"),null);activeTrialId=null;currentTrial.verdictSummary=null;setTrialStatus("closed",false);refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
+}, err => {clearPrivateContext();trialRevision++;if(unsubscribeTrial)unsubscribeTrial();renderPortrait(document.getElementById("mugshot"),null);activeTrialId=null;courtRoster.select(null);currentTrial.verdictSummary=null;setTrialStatus("closed",false);refreshSubmissionListeners();document.getElementById("court-status").textContent="Unable to load the active trial. Reload to retry.";});
 
 function renderIdentity() {
   document.getElementById("account-status").textContent=!auth.currentUser?"":!currentProfile?"Student access is not available. Ask your teacher or sign out to switch accounts.":currentProfile.active!==true?"Participation is paused. You may read public content; ask your teacher to resume access.":"";

@@ -86,7 +86,7 @@ try{
         check(phoneDoc.documentElement.scrollWidth<=width,'header fits '+width+'px with '+(long?'long':'short')+' title');
         const db=dossier.getBoundingClientRect(),pb=progress.getBoundingClientRect(),tb=title.getBoundingClientRect(),mb=portrait.getBoundingClientRect();
         check(pb.left>=db.left&&pb.right<=db.right&&pb.top>=db.top&&pb.bottom<=db.bottom,'stepper remains inside dossier '+width);
-        check(width>1100?pb.left>=tb.right:pb.top>=tb.bottom,'stepper uses right desktop / secondary responsive placement '+width);
+        check(pb.top>=tb.bottom,'stepper follows title in widened narrative layout '+width);
         for(const step of phoneDoc.querySelectorAll('.trial-progress li')){const box=step.getBoundingClientRect(),label=step.lastElementChild.getBoundingClientRect();check(label.left>=box.left-.1&&label.right<=box.right+.1,'phase label stays inside compact step at '+width)}
         check(mb.right<=tb.left&&mb.bottom<=db.bottom,'portrait stays separate from long title '+width);
       }
