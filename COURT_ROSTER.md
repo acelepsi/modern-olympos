@@ -110,7 +110,7 @@ Deploy the reviewed site and Firestore rules together using the existing prepare
 rules/admin UID process. Preserve the real administrator UID substitution. New files
 are included in both site/local-server allowlists. No existing documents require a
 migration. Until the new rules are released, roster reads/approval are denied and
-the drawer displays its error state; existing students remain unlisted.
+the drawer displays its error state; the updated role panel also cannot load its private roster permissions. Release both components together. Existing students remain unlisted.
 
 Reload administrator tabs after release. Old assignment writes for an approved
 roster may be rejected because they do not synchronize the copy. Updated role saves

@@ -987,3 +987,6 @@ a { color: inherit; }
 #court-roster button{min-height:44px;border:1px solid #766144;background:#fff8eb;color:#332919;padding:8px 12px;font:inherit}
 #court-roster button:focus-visible,#view-court-roster:focus-visible{outline:3px solid #755215;outline-offset:3px}
 @media(max-width:600px){#court-roster{inset:auto 0 0;width:100%;height:min(88dvh,760px);border-radius:12px 12px 0 0;padding:20px}}
+
+html:has(#court-roster[open]){overflow:hidden}
+@media(max-width:600px){#court-roster h2{font-size:1.75rem}}
