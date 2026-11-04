@@ -16,3 +16,14 @@ test('stepper is part of the dossier and preserves every existing functional hoo
 test('architectural artwork is court-only and portraits use a noncropping inset',()=>{
  const css=read('style.css');assert.match(css,/\.dossier::before\{[^}]*linear-gradient[^}]*courtroom-architecture\.svg/);assert.match(css,/\.dossier \.mugshot>img\{[^}]*object-fit:contain/);assert.match(css,/\.dossier \.mugshot::after\{[^}]*pointer-events:none[^}]*portrait-frame\.svg/);assert.match(css,/\.dossier \.trial-progress small\{[^}]*clip:/);assert.match(css,/@media\(max-width:1100px\)/);assert.match(css,/@media\(max-width:600px\)/);
 });
+
+
+test('dossier layout has one consolidated component with no legacy flex/gutter overrides',()=>{
+ const css=read('style.css'),start=css.indexOf('/* One dossier grid'),end=css.indexOf('.status-pill',start),component=css.slice(start,end),outside=css.slice(0,start)+css.slice(end);
+ assert.doesNotMatch(outside,/\.dossier\b|\.defendant-info\b|#view-court-roster/);
+ assert.equal((css.match(/\.trial-room\s*\{/g)||[]).length,1);
+ assert.match(component,/grid-template-areas:"heading" "case" "progress"/);
+ assert.match(component,/max-width:78ch/);assert.doesNotMatch(component,/display:contents|flex-wrap|margin-left|position:fixed/);
+ const html=read('court.html'),heading=html.indexOf('id="defendant-name"'),portrait=html.indexOf('id="mugshot"'),charge=html.indexOf('id="defendant-charge"'),progress=html.indexOf('class="trial-progress"');
+ assert.ok(heading<portrait&&portrait<charge&&charge<progress);assert.equal((html.match(/id="view-court-roster"/g)||[]).length,1);
+});
