@@ -1,3 +1,4 @@
+import {planRosterBulk,runRosterBulk,createRosterBulkConfirmation} from './roster-bulk.js';
 import {saveRoleWithRoster,setRosterApproval,revokeStudentRosters,filterRoleStudents} from './roster-data.js';
 import {COUNTRIES} from './school-data.js';
 import {setupStudentBatchAdmin} from './student-batch-admin.js';
@@ -17,18 +18,37 @@ const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
 let authRevision=0, selectionRevision=0, selectedTrialId=null, adminAuthorized=false;
 let savingTrial=false;
-let roleRows=[],roleSchools=[];
+let roleRows=[],roleSchools=[];let rosterBulkActive=false,roleFilterRevision=0;
 function rosterApi(current){return {current,ref:(...parts)=>doc(db,...parts),newId:()=>doc(collection(db,'trials')).id,run:callback=>runTransaction(db,callback),trials:async()=>{const result=await getDocsFromServer(collection(db,'trials'));return result.docs.map(item=>({id:item.id}))}}}
 function revokeRosters(uid){const r=authRevision,user=auth.currentUser?.uid;return revokeStudentRosters(uid,rosterApi(()=>adminAuthorized&&currentAdmin(r,user)))}
-function filterRoles(){const visible=new Set(filterRoleStudents(students,$('role-school-filter').value,$('role-alias-search').value).map(student=>student.id));for(const item of roleRows)item.row.hidden=!visible.has(item.id);$('role-filter-status').textContent=`Showing ${roleRows.filter(item=>!item.row.hidden).length} of ${roleRows.length} students.`}
-function resetRoleFilters(){roleRows=[];$('role-school-filter').value='';$('role-alias-search').value='';$('role-filter-status').textContent=''}
+function filterRoles(){roleFilterRevision++;bulkConfirmation.cancel();$('roster-bulk-status').textContent='';const visible=new Set(filterRoleStudents(students,$('role-school-filter').value,$('role-alias-search').value).map(student=>student.id));for(const item of roleRows)item.row.hidden=!visible.has(item.id);$('role-filter-status').textContent=`Showing ${roleRows.filter(item=>!item.row.hidden).length} of ${roleRows.length} students.`}
+function resetRoleFilters(){roleFilterRevision++;bulkConfirmation.cancel();roleRows=[];$('role-school-filter').value='';$('role-alias-search').value='';$('role-filter-status').textContent=''}
 $('role-school-filter').addEventListener('change',filterRoles);$('role-alias-search').addEventListener('input',filterRoles);
 
 let reasoningRequest=0;
 let creatingStudent=false, studentRequest=0, provisionSequence=0;
 // Keep writes locked across trial reselection until the original operation settles.
 const pendingTrialSaves=new Set();
-const panels={roles:{request:0,ready:false},review:{request:0,ready:false},votes:{request:0,ready:false}};
+const panels={roles:{request:0,ready:false,loading:false},review:{request:0,ready:false},votes:{request:0,ready:false}};
+const bulkConfirmation=createRosterBulkConfirmation();
+function applyRosterBulkState(){const enabled=adminAuthorized&&!!selectedTrialId&&panels.roles.ready;for(const id of ['approve-visible-roster','withdraw-visible-roster'])$(id).disabled=!enabled||rosterBulkActive;for(const id of ['role-school-filter','role-alias-search'])$(id).disabled=!enabled||rosterBulkActive;$('refresh-roles').disabled=rosterBulkActive||!adminAuthorized||!selectedTrialId||panels.roles.loading;for(const item of roleRows)item.lock()}
+async function bulkRoster(approve){
+ if(rosterBulkActive||!adminAuthorized||!panels.roles.ready)return;
+ const context=selectionContext(),request=panels.roles.request,filter=roleFilterRevision;
+ const current=()=>currentPanel(context,'roles',request)&&panels.roles.ready&&filter===roleFilterRevision;
+ const plan=planRosterBulk(roleRows.filter(item=>!item.row.hidden).map(item=>item.snapshot()),approve);
+ const label=approve?'Approved':'Withdrawn',alreadyLabel=approve?'already approved':'already withdrawn';
+ if(!plan.eligible.length){$('roster-bulk-status').textContent=`${label}: 0; ${alreadyLabel}: ${plan.already}; skipped: ${plan.skipped}; failed: 0. No eligible visible students. Unsaved roles, inactive/invalid school data and unconfirmed individual approvals require review.`;return}
+ rosterBulkActive=true;applyRosterBulkState();
+ try{
+  const confirmed=await bulkConfirmation.ask({trial:context.trialId,plan,approve});if(!confirmed||!current()){if(current())$('roster-bulk-status').textContent='Bulk roster action cancelled. No batch writes were started.';return}
+  $('roster-bulk-status').textContent=`${approve?'Approving':'Withdrawing'} ${plan.eligible.length} visible students for ${context.trialId}…`;
+  const result=await runRosterBulk(plan,approve,{current,write:(row,next)=>setRosterApproval(context.trialId,row.id,next,{...rosterApi(current),skipResolved:true,...(next?{review:row.review}:{})}),saved:(row,next)=>row.apply(next),failed:row=>row.fail()});
+  if(current())$('roster-bulk-status').textContent=`${label}: ${result.changed}; ${alreadyLabel}: ${result.already}; skipped: ${result.skipped}; failed/unconfirmed: ${result.failed}; not attempted: ${result.remaining}. ${result.failed?'Only unresolved eligible students will be retried. Refresh roles if source details changed; confirm permissions again.':'Existing resolved approvals were left intact.'}`;
+ }finally{rosterBulkActive=false;applyRosterBulkState();if(current())$(approve?'approve-visible-roster':'withdraw-visible-roster').focus()}
+}
+$('approve-visible-roster').addEventListener('click',()=>bulkRoster(true));$('withdraw-visible-roster').addEventListener('click',()=>bulkRoster(false));
+
 function currentAdmin(revision,uid){return revision===authRevision && auth.currentUser?.uid===uid}
 function selectionContext(){return {auth:authRevision,uid:auth.currentUser?.uid,selection:selectionRevision,trialId:selectedTrialId}}
 function sameSelection(context){
@@ -41,7 +61,7 @@ function panelNode(name){return $(name==='roles'?'roles-status':name==='review'?
 function startPanel(name){
  const context=selectionContext(),panel=panels[name],request=++panel.request;
  panel.ready=false;
- if(name==='roles'){roleRows=[];$('student-rows').replaceChildren();$('role-filter-status').textContent=''}
+ if(name==='roles'){bulkConfirmation.cancel();$('roster-bulk-status').textContent='';roleRows=[];$('student-rows').replaceChildren();$('role-filter-status').textContent=''}
  const node=panelNode(name);node.replaceChildren();
  const valid=sameSelection(context) && !!context.trialId;
  node.textContent=valid?`Loading ${name==='roles'?'student roles':name==='review'?'submissions':'ballots'} for ${context.trialId}…`:'Select a trial to load this panel.';
@@ -49,12 +69,13 @@ function startPanel(name){
  if(name==='roles')$('refresh-roles').disabled=valid||!context.trialId;
  if(name==='review')$('refresh-submissions').disabled=valid||!context.trialId;
  if(name==='votes'){$('refresh-votes').disabled=valid||!context.trialId;$('publish-verdict').disabled=true}
+ if(name==='roles'){panels.roles.loading=valid;applyRosterBulkState()}
  return {context,request,valid};
 }
 function finishPanel(name,context,request,ready){
  if(!currentPanel(context,name,request))return;
  panels[name].ready=ready;panelNode(name).setAttribute('aria-busy','false');
- if(name==='roles')$('refresh-roles').disabled=false;
+ if(name==='roles'){panels.roles.loading=false;applyRosterBulkState()}
  if(name==='review')$('refresh-submissions').disabled=false;
  if(name==='votes'){$('refresh-votes').disabled=false;$('publish-verdict').disabled=!ready}
 }
@@ -96,8 +117,8 @@ async function logout(){try{await signOut(auth)}catch(err){status('Sign-out fail
 $('logout').addEventListener('click',logout);$('switch-account').addEventListener('click',logout);
 onAuthStateChanged(auth,async user=>{
  const revision=++authRevision,uid=user?.uid;
- adminAuthorized=false;roleSchools=[];resetRoleFilters();$('role-school-filter').replaceChildren();selectedTrialId=null;selectionRevision++;students=[];trials=[];savingTrial=false;resetReasoningPanel();
- for(const name of Object.keys(panels)){panels[name].request++;panels[name].ready=false;panelNode(name).replaceChildren();panelNode(name).setAttribute('aria-busy','false')}
+ adminAuthorized=false;roleSchools=[];resetRoleFilters();applyRosterBulkState();$('role-school-filter').replaceChildren();selectedTrialId=null;selectionRevision++;students=[];trials=[];savingTrial=false;resetReasoningPanel();
+ for(const name of Object.keys(panels)){panels[name].request++;panels[name].ready=false;panels[name].loading=false;panelNode(name).replaceChildren();panelNode(name).setAttribute('aria-busy','false')}
  studentRequest++;$('account-rows').replaceChildren();$('student-account-status').textContent='';
  for(const id of ['student-code','student-name','student-password'])$(id).value='';
  for(const id of ['student-rows','trial-select'])$(id).replaceChildren();
@@ -164,21 +185,21 @@ async function renderStudents(){
    name.textContent=student.displayName||'Student';
    const school=roleSchools.find(school=>school.id===student.schoolId),schoolLabel=document.createElement('span');schoolLabel.className='role-school-label';schoolLabel.textContent=school?.name||'School not provided';if(school&&Object.hasOwn(COUNTRIES,school.countryCode)){const flag=document.createElement('img');flag.src=COUNTRIES[school.countryCode].flag;flag.alt='Flag of '+COUNTRIES[school.countryCode].name;flag.width=24;flag.height=16;schoolLabel.prepend(flag)}name.append(schoolLabel);
    for(const role of roles){const option=document.createElement('option');option.value=role;option.textContent=role;select.append(option)}
-   select.setAttribute('aria-label',`Role for ${student.displayName||student.id}`);
+   select.setAttribute('aria-label',`Role for ${student.displayName||student.id}`);let rowPending=false;function rowControls(){btn.disabled=select.disabled=rowPending||rosterBulkActive;rosterButton.disabled=rowPending||rosterBulkActive||approvalUnknown}
    select.value=roles.includes(assigned[student.id])?assigned[student.id]:'unassigned';btn.textContent='Save role';
    select.addEventListener('change',()=>{btn.textContent='Save role *'});
    btn.addEventListener('click',async()=>{
-    if(!currentPanel(context,'roles',request)||!panels.roles.ready||btn.disabled)return;
-    const role=select.value;btn.disabled=true;select.disabled=true;
-    try{rosterButton.disabled=true;const published=await saveRoleWithRoster(context.trialId,student.id,role,rosterApi(()=>currentPanel(context,'roles',request)&&panels.roles.ready));if(currentPanel(context,'roles',request)){assigned[student.id]=role;approved=!!published;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';btn.textContent='Saved';status(`Saved ${student.displayName||'Student'}: ${role} for ${context.trialId}`)}}
+    if(!currentPanel(context,'roles',request)||!panels.roles.ready||rosterBulkActive||btn.disabled)return;
+    const role=select.value;rowPending=true;rowControls();
+    try{const published=await saveRoleWithRoster(context.trialId,student.id,role,rosterApi(()=>currentPanel(context,'roles',request)&&panels.roles.ready));if(currentPanel(context,'roles',request)){assigned[student.id]=role;approved=!!published;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';btn.textContent='Saved';status(`Saved ${student.displayName||'Student'}: ${role} for ${context.trialId}`)}}
     catch(err){if(currentPanel(context,'roles',request))status('Unable to save role: '+err.code)}
-    finally{if(currentPanel(context,'roles',request)){btn.disabled=false;select.disabled=false;rosterButton.disabled=approvalUnknown}}
+    finally{rowPending=false;if(currentPanel(context,'roles',request))rowControls()}
    });
    roleCell.append(select);action.append(btn);
    const rosterButton=document.createElement('button');rosterButton.type='button';let approvalUnknown=false,approved=permissions[student.id]?.approved===true;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';
-   rosterButton.addEventListener('click',async()=>{if(!currentPanel(context,'roles',request)||!panels.roles.ready||rosterButton.disabled)return;const next=!approved;if(next&&select.value!==(assigned[student.id]||'unassigned')){status('Save the selected role before approving a public roster.');return}if(next&&!confirm(`Approve ${student.displayName||'Student'} for the public roster of ${context.trialId}? Their alias, role, school and country will be public, including jury membership. Small-group totals may allow inference about jurors. Confirm separate permission for this trial. This does not change argument attribution consent and never publishes ballots or reasoning.`))return;if(!currentPanel(context,'roles',request))return;rosterButton.disabled=true;btn.disabled=true;
-    try{await setRosterApproval(context.trialId,student.id,next,rosterApi(()=>currentPanel(context,'roles',request)&&panels.roles.ready));if(currentPanel(context,'roles',request)){approved=next;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';status(next?'Trial roster approval saved.':'Roster approval withdrawn and public copy removed.')}}catch{if(currentPanel(context,'roles',request)){approvalUnknown=true;rosterButton.textContent='Refresh roles to verify approval';status('Roster approval not confirmed. Refresh roles to verify before retrying.')}}finally{if(currentPanel(context,'roles',request)){rosterButton.disabled=approvalUnknown;btn.disabled=false}}});
-   action.append(rosterButton);tr.append(name,roleCell,action);$('student-rows').append(tr);roleRows.push({id:student.id,row:tr});
+   rosterButton.addEventListener('click',async()=>{if(!currentPanel(context,'roles',request)||!panels.roles.ready||rosterBulkActive||rosterButton.disabled)return;const next=!approved;if(next&&select.value!==(assigned[student.id]||'unassigned')){status('Save the selected role before approving a public roster.');return}if(next&&!confirm(`Approve ${student.displayName||'Student'} for the public roster of ${context.trialId}? Their alias, role, school and country will be public, including jury membership. Small-group totals may allow inference about jurors. Confirm separate permission for this trial. This does not change argument attribution consent and never publishes ballots or reasoning.`))return;if(!currentPanel(context,'roles',request))return;rowPending=true;rowControls();
+    try{await setRosterApproval(context.trialId,student.id,next,rosterApi(()=>currentPanel(context,'roles',request)&&panels.roles.ready));if(currentPanel(context,'roles',request)){approved=next;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';status(next?'Trial roster approval saved.':'Roster approval withdrawn and public copy removed.')}}catch{if(currentPanel(context,'roles',request)){approvalUnknown=true;rosterButton.textContent='Refresh roles to verify approval';status('Roster approval not confirmed. Refresh roles to verify before retrying.')}}finally{rowPending=false;if(currentPanel(context,'roles',request))rowControls()}});
+   action.append(rosterButton);tr.append(name,roleCell,action);$('student-rows').append(tr);roleRows.push({id:student.id,row:tr,lock:rowControls,snapshot:()=>({id:student.id,student,school,role:select.value,savedRole:assigned[student.id]||'unassigned',approved,unknown:approvalUnknown,pending:rowPending,apply:next=>{approved=next;approvalUnknown=false;rosterButton.textContent=next?'Withdraw roster approval':'Approve public roster'},fail:()=>{rosterButton.textContent='Not confirmed — retry visible or refresh'}})});rowControls();
   }
   panelNode('roles').textContent=`Student roles for ${context.trialId}${students.length?'':': no students provisioned.'}`;
   finishPanel('roles',context,request,true);filterRoles();return true;

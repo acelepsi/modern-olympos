@@ -990,3 +990,13 @@ a { color: inherit; }
 
 html:has(#court-roster[open]){overflow:hidden}
 @media(max-width:600px){#court-roster h2{font-size:1.75rem}}
+
+/* Compact dossier and a reserved edge gutter keep the roster handle off controls. */
+.trial-room{margin-left:48px}
+.dossier{padding-top:24px;padding-bottom:24px;row-gap:14px}
+.dossier .defendant-info .charge{max-width:760px;font-size:1rem;line-height:1.5;white-space:pre-wrap;overflow:visible;max-height:none}
+#view-court-roster.roster-edge-handle{position:fixed;z-index:30;left:0;top:clamp(160px,45vh,420px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:44px;min-width:44px;height:154px;padding:8px 4px;border:1px solid #a58a54;border-left:0;border-radius:0 5px 5px 0;background:#20272c;color:#e6cc92;box-shadow:2px 4px 12px #0004;transition:background .15s ease}
+.roster-handle-icon{font-size:1.35rem;line-height:1}.roster-handle-label{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.8rem;letter-spacing:.04em}
+#view-court-roster:hover{background:#343a3a}#view-court-roster:focus-visible{outline:3px solid #e6cc92;outline-offset:-4px}
+@media(max-width:600px){.trial-room{margin-left:44px}.dossier .defendant-info{display:contents}.dossier .mugshot{grid-column:1;grid-row:1 / span 2}.dossier .charge-label{grid-column:2;grid-row:1}.dossier .defendant-info h1{grid-column:2;grid-row:2;margin:0}.dossier .defendant-info .charge{grid-column:1 / -1;grid-row:3;font-size:.98rem;line-height:1.45}.dossier .trial-progress{grid-row:4}#view-court-roster.roster-edge-handle{top:auto;bottom:20px;height:78px;gap:4px}.roster-handle-label{writing-mode:horizontal-tb;transform:none;font-size:.72rem;line-height:1.2;text-align:center;letter-spacing:normal}}
+@media(prefers-reduced-motion:reduce){#view-court-roster.roster-edge-handle{transition:none}}

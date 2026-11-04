@@ -757,3 +757,7 @@ test('inactive student and school cannot be newly approved',async()=>{
 test('public access follows active trial and never grants historical roster/private ballot reads',async()=>{
  await approveRoster();await assertSucceeds(updateDoc(ref(ADMIN,'settings/currentTrial'),{trialId:'case-b'}));await assertFails(getDocs(collection(db(null),'trials/case-a/publicRoster')));await assertFails(getDoc(ref(null,'trials/case-b/votes/other-juror')));await assertFails(getDocs(collection(db(null),'trials/case-a/rosterPermissions')));
 });
+
+test('bulk UI cannot bypass per-student roster consent with direct public-copy writes',async()=>{
+ const batch=writeBatch(db(ADMIN));batch.set(ref(ADMIN,'trials/case-a/publicRoster/ABCDEFGHIJKLMNOPQRST'),rosterMember);batch.set(ref(ADMIN,'trials/case-a/publicRoster/ZYXWVUTSRQPONMLKJIHG'),{alias:'Defender',role:'defender',schoolName:'',countryCode:''});await assertFails(batch.commit());assert.equal((await getDocs(collection(db(null),'trials/case-a/publicRoster'))).size,0);await assertFails(setDoc(ref('other-teacher','trials/case-a/rosterPermissions/prosecutor'),{publicId:rosterId,approved:true}));
+});

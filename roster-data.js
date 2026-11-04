@@ -14,9 +14,10 @@ export async function setRosterApproval(trial,uid,approve,api){
  const candidate=api.newId();return api.run(async tx=>{
   const permissionRef=api.ref('trials',trial,'rosterPermissions',uid),permission=await tx.get(permissionRef),id=permission.exists()?permission.data().publicId:candidate;
   const publicRef=api.ref('trials',trial,'publicRoster',id);
+  if(api.skipResolved&&((permission.exists()&&permission.data().approved===true)===approve)){if(!api.current())throw Error('Context changed.');return 'already'}
   if(!approve){if(!api.current())throw Error('Context changed.');if(permission.exists()){tx.set(permissionRef,{publicId:id,approved:false});tx.delete(publicRef)}return false}
   const assignment=await tx.get(api.ref('trials',trial,'assignments',uid)),role=assignment.exists()?assignment.data().role:'unassigned';
-  const data=Object.hasOwn(ROSTER_ROLES,role)?await member(tx,trial,uid,role,api):null;if(!data)throw Error('Only active assigned students with an active school (or no school) can be published.');if(!api.current())throw Error('Context changed.');
+  const data=Object.hasOwn(ROSTER_ROLES,role)?await member(tx,trial,uid,role,api):null;if(api.review&&data&&Object.keys(api.review).some(key=>api.review[key]!==data[key]))throw Error('Roster details changed; refresh before approval.');if(!data)throw Error('Only active assigned students with an active school (or no school) can be published.');if(!api.current())throw Error('Context changed.');
   tx.set(api.ref('trials',trial,'rosterSources',id),{uid});tx.set(permissionRef,{publicId:id,approved:true});tx.set(publicRef,data);return true;
  });
 }

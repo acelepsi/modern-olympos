@@ -47,7 +47,7 @@ function harness(file) {
     setDoc: async () => {}, updateDoc: async () => {}, addDoc: async () => {}, serverTimestamp: () => 'server-time',
     signOut: async () => {}, signInWithEmailAndPassword: async () => {},
     setupSchoolAdmin:()=>({creationSchool:()=>'',reload(){},publish:async()=>{}}),createSchoolAttribution:()=>({clear(){},render(){}}),
-    setupCourtRoster:()=>({select(){}}),filterRoleStudents:items=>items,COUNTRIES:{},saveRoleWithRoster:async(trial,uid,role)=>{await c.setDoc(['trials',trial,'assignments',uid],{role});return false},setRosterApproval:async()=>{},revokeStudentRosters:async()=>{},setupStudentBatchAdmin(){},setupEncyclopediaAdmin(){},deleteDoc:async()=>{},
+    createRosterBulkConfirmation:()=>({cancel(){},ask:async()=>false}),setupCourtRoster:()=>({select(){}}),filterRoleStudents:items=>items,COUNTRIES:{},saveRoleWithRoster:async(trial,uid,role)=>{await c.setDoc(['trials',trial,'assignments',uid],{role});return false},setRosterApproval:async()=>{},revokeStudentRosters:async()=>{},setupStudentBatchAdmin(){},setupEncyclopediaAdmin(){},deleteDoc:async()=>{},
     setupCourtTabs:()=>({select(){}}),setupCourtCounters(){},updateCourtCounters(){},renderTrialProgress(){},
     createVoteConfirmation:()=>({ask:async()=>c.confirm(),cancel(){}}),
     confirm: () => true, alert: message => { throw Error(message); },
