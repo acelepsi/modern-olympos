@@ -29,4 +29,6 @@ jobs:
         run: node tests/platform-polish.browser.cjs
       - name: Administrator module, school publication and international homepage in Chrome
         run: node tests/admin-module.browser.cjs
+      - name: Public court roster and hero in Chrome
+        run: node tests/roster.browser.cjs
       - run: npm run prepare:site

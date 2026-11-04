@@ -150,3 +150,11 @@ test('actual school batch uses isolated real emulator Auth, preserves teacher se
  const duplicate=createStudentBatch(school,api);duplicate.add(1);duplicate.edit(0,'name','Different Alias');duplicate.edit(0,'code',batch.rows[0].code);duplicate.generate();await duplicate.create();assert.equal(duplicate.rows[0].state,'exists');assert.equal(duplicate.credentials().length,0);assert.equal(created.length,2);assert.equal(admin.auth.currentUser.uid,teacherUid);
  batch.clear();duplicate.clear();assert.equal(batch.credentials().length,0);
 });
+
+test('actual roster helpers keep opt-in separate and atomically update/withdraw only public participation metadata',async()=>{
+ const {setRosterApproval,saveRoleWithRoster,revokeStudentRosters}=await import(require('node:url').pathToFileURL(path.join(__dirname,'..','roster-data.js')).href);const admin=clients.get('admin'),db=admin.db,uid='synthetic-roster-student',trial='local-preparation';
+ await storeSdk.setDoc(storeSdk.doc(db,'students',uid),{displayName:'Synthetic Roster Alias',accountType:'student',active:true});
+ const api={current:()=>true,ref:(...parts)=>storeSdk.doc(db,...parts),newId:()=>storeSdk.doc(storeSdk.collection(db,'trials')).id,run:fn=>storeSdk.runTransaction(db,fn),trials:async()=>[{id:trial}]};
+ await saveRoleWithRoster(trial,uid,'juror',api);assert.equal((await storeSdk.getDocs(storeSdk.collection(db,'trials',trial,'publicRoster'))).size,0);await setRosterApproval(trial,uid,true,api);let docs=(await storeSdk.getDocs(storeSdk.collection(db,'trials',trial,'publicRoster'))).docs;assert.equal(docs.length,1);assert.notEqual(docs[0].id,uid);assert.deepEqual(Object.keys(docs[0].data()).sort(),['alias','countryCode','role','schoolName']);assert.equal(docs[0].data().role,'juror');
+ await saveRoleWithRoster(trial,uid,'defender',api);assert.equal((await storeSdk.getDoc(docs[0].ref)).data().role,'defender');await saveRoleWithRoster(trial,uid,'unassigned',api);assert.equal((await storeSdk.getDoc(docs[0].ref)).exists(),false);await saveRoleWithRoster(trial,uid,'juror',api);assert.equal((await storeSdk.getDoc(docs[0].ref)).exists(),false);await setRosterApproval(trial,uid,true,api);await revokeStudentRosters(uid,api);assert.equal((await storeSdk.getDoc(docs[0].ref)).exists(),false);assert.equal((await storeSdk.getDoc(storeSdk.doc(db,'students',uid))).data().active,true);
+});

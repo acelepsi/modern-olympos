@@ -9,7 +9,9 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'olympos-admin-module-')),errors=
 const sdk=`
 const records=new Map([
  ['students/synthetic-admin',{displayName:'Synthetic Teacher',accountType:'teacher',active:true}],
- ['students/synthetic-student',{displayName:'Synthetic Alias',accountType:'student',active:true}],
+ ['students/synthetic-student',{displayName:'Synthetic Alias',accountType:'student',active:true,schoolId:'existing-school'}],
+ ['students/alpha',{displayName:'Alpha Observer',accountType:'student',active:true}],
+ ['students/zeta',{displayName:'Zeta Student',accountType:'student',active:true,schoolId:'existing-school'}],
  ['schools/existing-school',{name:'Existing School',countryCode:'TR',active:true}],
  ['trials/synthetic-trial',{title:'Synthetic Trial',status:'trial'}]
 ]);
@@ -30,7 +32,7 @@ export async function signInWithEmailAndPassword(){throw Error('Account creation
 window.syntheticAuthCreates=[];export async function createUserWithEmailAndPassword(isolated,email){if(isolated===auth)throw Error('Must use isolated Auth');if(email.startsWith('already-exists@')||window.syntheticAuthCreates.some(row=>row.email===email))throw {code:'auth/email-already-in-use'};const user={uid:'synthetic-new-'+(++sequence),email};window.syntheticAuthCreates.push({email,uid:user.uid});isolated.currentUser=user;return {user}}
 export async function deleteUser(user){if(user.uid==='synthetic-admin')throw Error('Teacher deletion forbidden');}
 export function collection(_, ...parts){return {path:parts.join('/')}}
-export function doc(base,...parts){return parts.length?{path:parts.join('/'),id:parts.at(-1)}:{path:base.path+'/school'+(++sequence),id:'school'+sequence}}
+export function doc(base,...parts){return parts.length?{path:parts.join('/'),id:parts.at(-1)}:{path:base.path+'/S'+String(++sequence).padStart(19,'0'),id:'S'+String(sequence).padStart(19,'0')}}
 export function where(...args){return args}
 export function query(base,...filters){return {...base,filters}}
 function snapshot(ref){return {id:ref.id,exists:()=>records.has(ref.path),data:()=>records.get(ref.path),metadata:{fromCache:false,hasPendingWrites:false}}}
@@ -79,6 +81,18 @@ async function waitFor(expression,label){for(let i=0;i<100;i++){if(errors.length
   await waitFor("document.getElementById('school-feedback').textContent.includes('Directory loaded')&&!document.getElementById('dashboard').hidden",'full administrator initialization');
   check(errors.length===0,'no JavaScript initialization or console errors');
   check(await evaluate("document.getElementById('trial-select').value==='synthetic-trial'&&document.getElementById('account-rows').textContent.includes('Synthetic Alias')&&document.getElementById('vote-count').textContent.includes('0 ballot(s)')&&document.getElementById('roles-status').textContent.includes('synthetic-trial')&&document.getElementById('review-list').textContent.includes('No pending submissions')&&!document.getElementById('entry-editor').disabled"),'existing trial, student and encyclopedia initialization');
+  check(await evaluate("[...document.querySelectorAll('#student-rows tr')].map(row=>row.firstElementChild.firstChild.textContent).join(',')==='Alpha Observer,Synthetic Alias,Zeta Student'"),'administrator aliases are alphabetical');
+  await evaluate("document.getElementById('role-school-filter').value='__none__';document.getElementById('role-school-filter').dispatchEvent(new Event('change'))");check(await evaluate("[...document.querySelectorAll('#student-rows tr')].filter(row=>!row.hidden).length===1&&document.getElementById('role-filter-status').textContent.includes('1 of 3')"),'no-school filter changes visibility only');
+  await evaluate("document.getElementById('role-school-filter').value='existing-school';document.getElementById('role-school-filter').dispatchEvent(new Event('change'));document.getElementById('role-alias-search').value='SYNTHETIC';document.getElementById('role-alias-search').dispatchEvent(new Event('input'))");check(await evaluate("[...document.querySelectorAll('#student-rows tr')].filter(row=>!row.hidden).length===1&&document.querySelectorAll('#student-rows .role-school-label img').length===2"),'school and alias search combine without Firestore writes');
+  await evaluate("window.testRoleRow=[...document.querySelectorAll('#student-rows tr')].find(row=>!row.hidden);window.testRoleRow.querySelector('select').value='juror';window.testRoleRow.querySelector('button').click()");await waitFor("window.testRoleRow.querySelector('button').textContent==='Saved'",'current trial role save');
+  check(await evaluate("window.syntheticWrites.some(write=>write.path==='trials/synthetic-trial/assignments/synthetic-student'&&write.data.role==='juror')&&!window.syntheticWrites.some(write=>write.path.includes('/publicRoster/'))"),'saving a role does not imply public roster permission');
+  await evaluate("window.testRoleRow.querySelector('select').value='defender';window.testRoleRow.querySelectorAll('button')[1].click()");check(await evaluate("document.getElementById('status').textContent.includes('Save the selected role')&&!window.syntheticWrites.some(write=>write.path.includes('/publicRoster/'))"),'unsaved role edits cannot silently publish another saved role');await evaluate("window.testRoleRow.querySelector('select').value='juror'");
+  await evaluate("window.confirm=()=>false;window.testRoleRow.querySelectorAll('button')[1].click()");check(await evaluate("!window.syntheticWrites.some(write=>write.path.includes('/publicRoster/'))"),'cancelled roster approval publishes nothing');
+  await evaluate("window.confirm=()=>true;window.testRoleRow.querySelectorAll('button')[1].click()");await waitFor("window.testRoleRow.querySelectorAll('button')[1].textContent==='Withdraw roster approval'",'explicit separate roster approval');
+  check(await evaluate("Object.keys(window.syntheticWrites.find(write=>write.path.includes('/publicRoster/')).data).sort().join(',')==='alias,countryCode,role,schoolName'"),'public roster copy excludes UID and private fields');
+  await evaluate("window.testRoleRow.querySelector('select').value='defender';window.testRoleRow.querySelector('button').click()");await waitFor("window.syntheticWrites.some(write=>write.path.includes('/publicRoster/')&&write.data.role==='defender')",'approved role synchronizes public projection');
+  await evaluate("window.testRoleRow.querySelector('select').value='unassigned';window.testRoleRow.querySelector('button').click()");await waitFor("window.syntheticDeletes.some(path=>path.includes('/publicRoster/'))",'unassignment removes public copy');
+  await evaluate("document.getElementById('role-school-filter').value='';document.getElementById('role-alias-search').value='';document.getElementById('role-alias-search').dispatchEvent(new Event('input'))");
   for(const country of ['TR','RO','GR']){
    await evaluate("document.getElementById('school-select').value='existing-school';document.getElementById('school-select').dispatchEvent(new Event('change'));document.getElementById('school-new').click()");
    check(await evaluate("!document.getElementById('school-editor').disabled&&document.getElementById('school-name').value===''&&document.getElementById('school-select').value===''"),'Add school actually resets/enables editor '+country);
@@ -86,7 +100,7 @@ async function waitFor(expression,label){for(let i=0;i<100;i++){if(errors.length
    await waitFor(`document.getElementById('school-select').textContent.includes('Synthetic ${country} School')`,'school saved '+country);
    check(await evaluate(`['school-select','student-school','affiliation-school'].every(id=>document.getElementById(id).textContent.includes('Synthetic ${country} School'))`),'saved school available in directory and assignment dropdowns '+country);
   }
-  check(await evaluate("window.syntheticWrites.length===3&&window.syntheticWrites.every(write=>write.path.startsWith('schools/'))&&document.getElementById('school-feedback').textContent.includes('School saved')"),'only synthetic school records written');
+  check(await evaluate("window.syntheticWrites.filter(write=>write.path.startsWith('schools/')).length===3&&document.getElementById('school-feedback').textContent.includes('School saved')"),'only synthetic school records written');
   // Exercise query/where in the real controller, not merely their import bindings.
   await evaluate("document.getElementById('school-name').value='Updated Synthetic School';document.getElementById('school-form').requestSubmit()");
   await waitFor("document.getElementById('student-school').textContent.includes('Updated Synthetic School')",'existing-school query path');
@@ -101,6 +115,13 @@ async function waitFor(expression,label){for(let i=0;i<100;i++){if(errors.length
   await evaluate("document.getElementById('school-active').checked=false;document.getElementById('school-form').requestSubmit()");
   await waitFor("window.syntheticDeletes.some(key=>key.startsWith('publicSchools/'))&&!document.getElementById('school-public-status').textContent.startsWith('Published')",'deactivation removes public copy');
   check(await evaluate("document.getElementById('school-publish').disabled"),'inactive school cannot be published');
+  await evaluate("window.testRoleRow=[...document.querySelectorAll('#student-rows tr')].find(row=>row.firstElementChild.firstChild.textContent==='Synthetic Alias');window.testRoleRow.querySelector('select').value='juror';window.testRoleRow.querySelector('button').click()");
+  await waitFor("!window.testRoleRow.querySelector('button').disabled&&window.syntheticWrites.filter(write=>write.path==='trials/synthetic-trial/assignments/synthetic-student').at(-1).data.role==='juror'",'saved role before metadata consent check');
+  await evaluate("window.confirm=()=>true;window.testRoleRow.querySelectorAll('button')[1].click()");await waitFor("window.testRoleRow.querySelectorAll('button')[1].textContent==='Withdraw roster approval'",'reapproval before school metadata edit');
+  await evaluate("window.beforeRosterDeletes=window.syntheticDeletes.filter(path=>path.includes('/publicRoster/')).length;document.getElementById('school-select').value='existing-school';document.getElementById('school-select').dispatchEvent(new Event('change'));document.getElementById('school-name').value='Renamed Existing School';document.getElementById('school-form').requestSubmit()");
+  await waitFor("document.getElementById('student-school').textContent.includes('Renamed Existing School')",'school metadata synchronization');
+  check(await evaluate("window.syntheticDeletes.filter(path=>path.includes('/publicRoster/')).length>window.beforeRosterDeletes&&window.syntheticWrites.filter(write=>write.path==='trials/synthetic-trial/rosterPermissions/synthetic-student').at(-1).data.approved===false"),'school metadata edits withdraw roster permission and remove the public identity copy');
+  await evaluate("document.getElementById('school-name').value='Existing School';document.getElementById('school-form').requestSubmit()");await waitFor("!document.getElementById('student-school').textContent.includes('Renamed Existing School')",'school restored without republishing roster');
   // Exercise the actual administrator batch module without production Auth/data.
   await evaluate("document.getElementById('batch-school').value='existing-school';document.getElementById('batch-school').dispatchEvent(new Event('change'));document.getElementById('batch-count').value='30';document.getElementById('batch-add').click();document.getElementById('batch-generate').click();[...document.querySelectorAll('#batch-rows tr')].forEach((row,i)=>{const inputs=row.querySelectorAll('input');inputs[0].value='Synthetic Batch Alias '+i;inputs[0].dispatchEvent(new Event('input'));inputs[1].value=i===29?'already-exists':'batch-code-'+String(i).padStart(2,'0');inputs[1].dispatchEvent(new Event('input'))})");
   check(await evaluate("document.getElementById('batch-school').disabled&&document.querySelectorAll('#batch-rows tr').length===30&&document.querySelectorAll('#batch-rows input').length===60"),'one-school batch with editable aliases/codes and no password inputs');

@@ -1,3 +1,5 @@
+import {saveRoleWithRoster,setRosterApproval,revokeStudentRosters,filterRoleStudents} from './roster-data.js';
+import {COUNTRIES} from './school-data.js';
 import {setupStudentBatchAdmin} from './student-batch-admin.js';
 import {setupSchoolAdmin} from './school-admin.js';
 import {setupEncyclopediaAdmin} from './encyclopedia-admin.js';
@@ -15,6 +17,13 @@ const roles=['unassigned','prosecutor','defender','juror'];
 let students=[],trials=[],activeTrialId=null;
 let authRevision=0, selectionRevision=0, selectedTrialId=null, adminAuthorized=false;
 let savingTrial=false;
+let roleRows=[],roleSchools=[];
+function rosterApi(current){return {current,ref:(...parts)=>doc(db,...parts),newId:()=>doc(collection(db,'trials')).id,run:callback=>runTransaction(db,callback),trials:async()=>{const result=await getDocsFromServer(collection(db,'trials'));return result.docs.map(item=>({id:item.id}))}}}
+function revokeRosters(uid){const r=authRevision,user=auth.currentUser?.uid;return revokeStudentRosters(uid,rosterApi(()=>adminAuthorized&&currentAdmin(r,user)))}
+function filterRoles(){const visible=new Set(filterRoleStudents(students,$('role-school-filter').value,$('role-alias-search').value).map(student=>student.id));for(const item of roleRows)item.row.hidden=!visible.has(item.id);$('role-filter-status').textContent=`Showing ${roleRows.filter(item=>!item.row.hidden).length} of ${roleRows.length} students.`}
+function resetRoleFilters(){roleRows=[];$('role-school-filter').value='';$('role-alias-search').value='';$('role-filter-status').textContent=''}
+$('role-school-filter').addEventListener('change',filterRoles);$('role-alias-search').addEventListener('input',filterRoles);
+
 let reasoningRequest=0;
 let creatingStudent=false, studentRequest=0, provisionSequence=0;
 // Keep writes locked across trial reselection until the original operation settles.
@@ -32,7 +41,7 @@ function panelNode(name){return $(name==='roles'?'roles-status':name==='review'?
 function startPanel(name){
  const context=selectionContext(),panel=panels[name],request=++panel.request;
  panel.ready=false;
- if(name==='roles')$('student-rows').replaceChildren();
+ if(name==='roles'){roleRows=[];$('student-rows').replaceChildren();$('role-filter-status').textContent=''}
  const node=panelNode(name);node.replaceChildren();
  const valid=sameSelection(context) && !!context.trialId;
  node.textContent=valid?`Loading ${name==='roles'?'student roles':name==='review'?'submissions':'ballots'} for ${context.trialId}…`:'Select a trial to load this panel.';
@@ -65,7 +74,7 @@ async function selectTrial(id){
  $('trial-select').value=selectedTrialId||'';selectionRevision++;savingTrial=false;
  $('trial-form').querySelector('button').disabled=pendingTrialSaves.has(selectedTrialId);
  $('activate-trial').disabled=!selectedTrialId||!adminAuthorized;
- resetReasoningPanel();syncTrialEditor();status('');
+ resetRoleFilters();resetReasoningPanel();syncTrialEditor();status('');
  return Promise.all([renderStudents(),loadReviewQueue(),refreshVotes()]);
 }
 $('trial-select').addEventListener('change',()=>selectTrial($('trial-select').value));
@@ -87,7 +96,7 @@ async function logout(){try{await signOut(auth)}catch(err){status('Sign-out fail
 $('logout').addEventListener('click',logout);$('switch-account').addEventListener('click',logout);
 onAuthStateChanged(auth,async user=>{
  const revision=++authRevision,uid=user?.uid;
- adminAuthorized=false;selectedTrialId=null;selectionRevision++;students=[];trials=[];savingTrial=false;resetReasoningPanel();
+ adminAuthorized=false;roleSchools=[];resetRoleFilters();$('role-school-filter').replaceChildren();selectedTrialId=null;selectionRevision++;students=[];trials=[];savingTrial=false;resetReasoningPanel();
  for(const name of Object.keys(panels)){panels[name].request++;panels[name].ready=false;panelNode(name).replaceChildren();panelNode(name).setAttribute('aria-busy','false')}
  studentRequest++;$('account-rows').replaceChildren();$('student-account-status').textContent='';
  for(const id of ['student-code','student-name','student-password'])$(id).value='';
@@ -145,12 +154,15 @@ $('trial-form').addEventListener('submit',async e=>{
 async function renderStudents(){
  const {context,request,valid}=startPanel('roles');if(!valid)return false;
  try{
-  const rows=await getDocs(collection(db,'trials',context.trialId,'assignments'));
+  const [rows,schoolRows,permissionRows]=await Promise.all([getDocs(collection(db,'trials',context.trialId,'assignments')),getDocs(collection(db,'schools')),getDocs(collection(db,'trials',context.trialId,'rosterPermissions'))]);
   if(!currentPanel(context,'roles',request))return false;
   const assigned=Object.fromEntries(rows.docs.map(x=>[x.id,x.data().role]));
-  for(const student of students){
+  const permissions=Object.fromEntries(permissionRows.docs.map(x=>[x.id,x.data()]));roleSchools=schoolRows.docs.map(x=>({id:x.id,...x.data()}));
+  const before=$('role-school-filter').value;$('role-school-filter').replaceChildren();for(const [value,label] of [['','All Schools'],['__none__','Students without a school'],...roleSchools.map(school=>[school.id,school.name||'School unavailable'])]){const option=document.createElement('option');option.value=value;option.textContent=label;$('role-school-filter').append(option)}$('role-school-filter').value=before;
+  for(const student of filterRoleStudents(students,'','')){
    const tr=document.createElement('tr'),name=document.createElement('td'),roleCell=document.createElement('td'),action=document.createElement('td'),select=document.createElement('select'),btn=document.createElement('button');
-   name.textContent=student.displayName||student.id;
+   name.textContent=student.displayName||'Student';
+   const school=roleSchools.find(school=>school.id===student.schoolId),schoolLabel=document.createElement('span');schoolLabel.className='role-school-label';schoolLabel.textContent=school?.name||'School not provided';if(school&&Object.hasOwn(COUNTRIES,school.countryCode)){const flag=document.createElement('img');flag.src=COUNTRIES[school.countryCode].flag;flag.alt='Flag of '+COUNTRIES[school.countryCode].name;flag.width=24;flag.height=16;schoolLabel.prepend(flag)}name.append(schoolLabel);
    for(const role of roles){const option=document.createElement('option');option.value=role;option.textContent=role;select.append(option)}
    select.setAttribute('aria-label',`Role for ${student.displayName||student.id}`);
    select.value=roles.includes(assigned[student.id])?assigned[student.id]:'unassigned';btn.textContent='Save role';
@@ -158,14 +170,18 @@ async function renderStudents(){
    btn.addEventListener('click',async()=>{
     if(!currentPanel(context,'roles',request)||!panels.roles.ready||btn.disabled)return;
     const role=select.value;btn.disabled=true;select.disabled=true;
-    try{await setDoc(doc(db,'trials',context.trialId,'assignments',student.id),{role});if(currentPanel(context,'roles',request)){btn.textContent='Saved';status(`Saved ${name.textContent}: ${role} for ${context.trialId}`)}}
+    try{rosterButton.disabled=true;const published=await saveRoleWithRoster(context.trialId,student.id,role,rosterApi(()=>currentPanel(context,'roles',request)&&panels.roles.ready));if(currentPanel(context,'roles',request)){assigned[student.id]=role;approved=!!published;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';btn.textContent='Saved';status(`Saved ${student.displayName||'Student'}: ${role} for ${context.trialId}`)}}
     catch(err){if(currentPanel(context,'roles',request))status('Unable to save role: '+err.code)}
-    finally{if(currentPanel(context,'roles',request)){btn.disabled=false;select.disabled=false}}
+    finally{if(currentPanel(context,'roles',request)){btn.disabled=false;select.disabled=false;rosterButton.disabled=approvalUnknown}}
    });
-   roleCell.append(select);action.append(btn);tr.append(name,roleCell,action);$('student-rows').append(tr);
+   roleCell.append(select);action.append(btn);
+   const rosterButton=document.createElement('button');rosterButton.type='button';let approvalUnknown=false,approved=permissions[student.id]?.approved===true;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';
+   rosterButton.addEventListener('click',async()=>{if(!currentPanel(context,'roles',request)||!panels.roles.ready||rosterButton.disabled)return;const next=!approved;if(next&&select.value!==(assigned[student.id]||'unassigned')){status('Save the selected role before approving a public roster.');return}if(next&&!confirm(`Approve ${student.displayName||'Student'} for the public roster of ${context.trialId}? Their alias, role, school and country will be public, including jury membership. Small-group totals may allow inference about jurors. Confirm separate permission for this trial. This does not change argument attribution consent and never publishes ballots or reasoning.`))return;if(!currentPanel(context,'roles',request))return;rosterButton.disabled=true;btn.disabled=true;
+    try{await setRosterApproval(context.trialId,student.id,next,rosterApi(()=>currentPanel(context,'roles',request)&&panels.roles.ready));if(currentPanel(context,'roles',request)){approved=next;rosterButton.textContent=approved?'Withdraw roster approval':'Approve public roster';status(next?'Trial roster approval saved.':'Roster approval withdrawn and public copy removed.')}}catch{if(currentPanel(context,'roles',request)){approvalUnknown=true;rosterButton.textContent='Refresh roles to verify approval';status('Roster approval not confirmed. Refresh roles to verify before retrying.')}}finally{if(currentPanel(context,'roles',request)){rosterButton.disabled=approvalUnknown;btn.disabled=false}}});
+   action.append(rosterButton);tr.append(name,roleCell,action);$('student-rows').append(tr);roleRows.push({id:student.id,row:tr});
   }
   panelNode('roles').textContent=`Student roles for ${context.trialId}${students.length?'':': no students provisioned.'}`;
-  finishPanel('roles',context,request,true);return true;
+  finishPanel('roles',context,request,true);filterRoles();return true;
  }catch(err){if(currentPanel(context,'roles',request)){panelNode('roles').textContent=`Cannot read assignments for ${context.trialId}: ${err.code||err.message}. Use Refresh student roles to retry.`;finishPanel('roles',context,request,false)}return false}
 }
 $('refresh-roles').addEventListener('click',renderStudents);
@@ -284,7 +300,7 @@ function renderAccounts(){
    if(!current()||button.disabled)return;
    const active=student.active!==true;button.disabled=true;
    try{
-    await updateDoc(doc(db,'students',student.id),{active});if(!current())return;
+    await revokeRosters(student.id);if(!current())return;await updateDoc(doc(db,'students',student.id),{active});if(!current())return;
     student.active=active;renderAccounts();$('student-account-status').textContent=`${name.textContent}: participation ${active?'enabled':'paused'}.`;
    }catch(error){if(current()){$('student-account-status').textContent='Unable to change access: '+(error.code||error.message);button.disabled=false}}
   });
@@ -368,6 +384,6 @@ $('load-reasoning').addEventListener('click',loadReasoningReview);
 
 setupEncyclopediaAdmin({auth,db,onAuthStateChanged,collection,doc,getDocFromServer,getDocsFromServer,setDoc,deleteDoc});
 
-const schoolManager=setupSchoolAdmin({auth,db,onAuthStateChanged,collection,doc,query,where,getDocFromServer,getDocsFromServer,setDoc,updateDoc,deleteDoc,runTransaction});
+const schoolManager=setupSchoolAdmin({auth,db,onAuthStateChanged,collection,doc,query,where,getDocFromServer,getDocsFromServer,setDoc,updateDoc,deleteDoc,runTransaction,revokeRosters});
 
 setupStudentBatchAdmin({auth,db,onAuthStateChanged,collection,doc,getDocFromServer,getDocsFromServer,provision:provisionStudentAccount,created:student=>{students.push(student);renderAccounts();schoolManager.reload();renderStudents();}});
