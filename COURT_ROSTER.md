@@ -131,3 +131,57 @@ role change/unassignment, school change/deactivation and reapproval, public draw
 refresh, desktop/mobile keyboard and screen reader, and browser fonts blocked/offline.
 Live Firebase configuration, real student permission records and real device/assistive
 technology behavior are not exercised by synthetic browser tests.
+
+## Compact dossier and visible-row bulk actions
+
+The compact refinement keeps all original description text/newlines (`pre-wrap`),
+reduces narrative type/leading to about 16px/1.5, limits desktop measure to 760px,
+and tightens dossier spacing. Mobile descriptions span the full dossier width below
+portrait/title. No description is truncated or given a fixed height. The single
+roster control is now a fixed left-edge handle; a narrow reserved gutter keeps it
+off forms and content. It opens the same drawer/subscription, without a duplicate
+button or horizontal launch section. Reduced motion and keyboard behavior remain.
+
+**Approve Visible Students** plans only the current selected trial's currently
+visible school/search result set. It excludes unsaved or unassigned roles, inactive
+students, unknown individual approval states, pending row actions, and invalid or
+inactive assigned-school metadata. Students with no school remain eligible under
+the existing model and show “School not provided”. Already approved rows are counted
+but not republished. Counts are a partition of the visible rows, not hidden students.
+
+The themed confirmation lists the selected trial, eligible count and saved-role
+breakdown. Approval stays disabled until the administrator acknowledges that they
+have independently obtained permission for **every eligible student**. This checkbox
+is not actual student consent and is not a replacement for obtaining it. If any
+permission is missing, cancel and use the existing individual controls instead.
+No new consent field or collection is added; each confirmed student uses the existing
+`setRosterApproval` transaction and existing private permission records.
+
+Bulk changes are sequential per-student transactions, not one atomic all-or-nothing
+batch. Successful entries stay approved if another student fails. Feedback separates
+newly approved/withdrawn, already resolved, skipped, failed/unconfirmed and not-attempted
+counts. Retrying plans only unresolved eligible rows and requires permission confirmation
+again. Each transaction rechecks the saved permission; already-resolved server entries
+are not rewritten, including a lost acknowledgement or another administrator's approval.
+It also verifies that the reviewed alias, role, school name and country still match
+current server metadata. Changed details fail safely: refresh roles and review again.
+
+**Withdraw Visible Approvals** has a separate explicit confirmation. It can withdraw
+already-approved visible students even if school metadata/activity or unsaved role
+edits make them ineligible for new publication. It changes no assignments, accounts,
+contributions, ballots, reasoning or totals.
+
+Confirmation/execution locks the bulk buttons, filters and row actions to prevent
+duplicates or changing the reviewed set. Switching trials, accounts, refreshing the
+panel or programmatically changing filters invalidates the operation's context.
+An already-sent authorized transaction can finish in its original trial; subsequent
+rows stop, and delayed callbacks never update a newer panel. Return/refresh the
+original trial to verify any completed writes. This is not a claim that a client can
+cancel an in-flight server commit. Partial failures are not reported as whole-batch
+success, and error details/credentials are never added to public records.
+
+For this refinement, deploy the updated **website only** through the existing process:
+there are **no Firestore rule/schema changes**, no new dependencies or backend services.
+The roster rules introduced earlier must already be deployed. Use the updated admin
+page, apply school/search filters, review eligibility and obtain permission before
+confirming a bulk action. Check native keyboard/phone behavior manually before class.

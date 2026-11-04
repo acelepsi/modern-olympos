@@ -61,3 +61,7 @@
 }
 
 .role-filters{display:grid;grid-template-columns:1fr 1fr;gap:16px}.role-school-label{display:block;font-size:.85rem;color:#d0c8b8;margin-top:6px}.role-school-label img{position:static;width:24px;height:16px;object-fit:contain;vertical-align:middle;margin-right:6px}#student-rows td button+button{margin-top:8px}@media(max-width:600px){.role-filters{grid-template-columns:1fr}}
+
+#roster-bulk-dialog{max-width:min(620px,calc(100vw - 32px));max-height:85dvh;overflow:auto;background:#202830;color:#eee5d6;border:1px solid #b39a64;border-radius:5px;padding:24px}#roster-bulk-dialog::backdrop{background:#080b10bb}#roster-bulk-dialog h2{color:#e3c98d}#roster-bulk-dialog p{line-height:1.65;overflow-wrap:anywhere}#roster-bulk-permission-row{display:flex;gap:10px;align-items:flex-start;margin:20px 0}#roster-bulk-permission-row[hidden]{display:none}#roster-bulk-permission{width:20px;height:20px;flex:0 0 20px}.roster-bulk-actions{display:flex;flex-wrap:wrap;gap:8px}
+
+html:has(#roster-bulk-dialog[open]){overflow:hidden}
