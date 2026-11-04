@@ -88,7 +88,7 @@ try{
         check(pb.left>=db.left&&pb.right<=db.right&&pb.top>=db.top&&pb.bottom<=db.bottom,'stepper remains inside dossier '+width);
         check(pb.top>=tb.bottom,'stepper follows title in widened narrative layout '+width);
         for(const step of phoneDoc.querySelectorAll('.trial-progress li')){const box=step.getBoundingClientRect(),label=step.lastElementChild.getBoundingClientRect();check(label.left>=box.left-.1&&label.right<=box.right+.1,'phase label stays inside compact step at '+width)}
-        check(mb.right<=tb.left&&mb.bottom<=db.bottom,'portrait stays separate from long title '+width);
+        check(tb.bottom<=mb.top&&mb.bottom<=db.bottom,'portrait stays beneath the separate full-width title '+width);
       }
       portrait.textContent='Ω';check(portrait.getBoundingClientRect().width===(width<=600?104:width<=1100?128:152),'missing portrait retains responsive frame '+width);
       const frameStyle=phone.contentWindow.getComputedStyle(portrait,'::after');check(frameStyle.pointerEvents==='none'&&frameStyle.backgroundImage.includes('data:image/svg+xml'),'local ornamental frame stays decorative '+width);

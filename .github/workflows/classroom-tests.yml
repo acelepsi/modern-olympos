@@ -31,4 +31,32 @@ jobs:
         run: node tests/admin-module.browser.cjs
       - name: Public court roster and hero in Chrome
         run: node tests/roster.browser.cjs
+      - name: Check out the PR baseline hero for screenshot comparison
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: dossier-baseline
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /court.html
+            /style.css
+      - name: Baseline hero screenshots with the same synthetic case
+        if: github.event_name == 'pull_request'
+        run: node tests/dossier-layout.browser.cjs
+        env:
+          HERO_BASELINE_DIR: ${{ github.workspace }}/dossier-baseline
+          HERO_SCREENSHOT_DIR: ${{ runner.temp }}/dossier-layout/before
+      - name: Final dossier screenshots and responsive layout in Chrome
+        run: node tests/dossier-layout.browser.cjs
+        env:
+          HERO_SCREENSHOT_DIR: ${{ runner.temp }}/dossier-layout/after
+      - name: Upload synthetic dossier screenshots for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: courtroom-dossier-layout
+          path: ${{ runner.temp }}/dossier-layout
+          retention-days: 7
+          if-no-files-found: error
       - run: npm run prepare:site
